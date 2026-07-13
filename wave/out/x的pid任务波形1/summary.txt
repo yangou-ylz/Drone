@@ -1,0 +1,113 @@
+文件: D:\原E盘\桌面\无人机\凌霄\5.飞控MCU源码工程\ANO_LX_FC\ANO_LX_FC\wave\x的pid任务波形1.csv
+采样率: 200 Hz | 点数: 12121 | 总时长: 60.60s
+活动窗: [20.93, 35.80]s = 14.87s
+静态窗: [0.00, 20.62]s
+
+== 关键指标 ==
+                  alt_drift_cm = 0.870
+               FC_ATT_ROL_peak = 2.260
+                FC_ATT_ROL_std = 0.248
+               FC_ATT_PIT_peak = 5.100
+                FC_ATT_PIT_std = 0.658
+               FC_ATT_YAW_peak = 93.540
+                FC_ATT_YAW_std = 0.912
+                  FC_ACC_X_std = 50.935
+                  FC_ACC_X_rms = 56.132
+                  FC_ACC_Y_std = 41.018
+                  FC_ACC_Y_rms = 61.973
+                  FC_ACC_Z_std = 65.032
+                  FC_ACC_Z_rms = 1368.843
+                  FC_GYR_X_std = 94.043
+                  FC_GYR_X_rms = 94.049
+                  FC_GYR_Y_std = 79.120
+                  FC_GYR_Y_rms = 79.120
+                  FC_GYR_Z_std = 31.308
+                  FC_GYR_Z_rms = 31.730
+                  active_dur_s = 14.870
+               vib_acc_rms_avg = 52.328
+     FC_ATT_ROL_outlier_3s_pct = 1.714
+     FC_ATT_PIT_outlier_3s_pct = 2.252
+     FC_ATT_YAW_outlier_3s_pct = 0.370
+       FC_ACC_X_outlier_3s_pct = 2.588
+       FC_ACC_Y_outlier_3s_pct = 2.857
+       FC_ACC_Z_outlier_3s_pct = 2.218
+       FC_GYR_X_outlier_3s_pct = 0.370
+       FC_GYR_Y_outlier_3s_pct = 2.387
+       FC_GYR_Z_outlier_3s_pct = 0.538
+
+== 通道统计 (活动窗内) ==
+通道                       mean        std        min        max     |peak|        rms
+FC_ACC_X              -23.590     50.935   -371.000    489.000    489.000     56.132
+FC_ACC_Y               46.457     41.018   -230.000    411.000    411.000     61.973
+FC_ACC_Z             1367.298     65.032    878.000   2107.000   2107.000   1368.843
+FC_GYR_X               -1.068     94.043   -253.000    359.000    359.000     94.049
+FC_GYR_Y                0.161     79.120   -617.000    519.000    617.000     79.120
+FC_GYR_Z                5.158     31.308   -122.000    134.000    134.000     31.730
+FC_MAG_X              -92.781     10.543   -126.000    -60.000    126.000     93.378
+FC_MAG_Y              576.492     27.637    519.000    645.000    645.000    577.154
+FC_MAG_Z             -388.890     25.090   -436.000   -325.000    436.000    389.699
+FC_ALT_BAR            266.096      0.360    265.410    266.450    266.450    266.097
+FC_ALT_FU              -0.795      0.344     -1.390     -0.520      1.390      0.867
+FC_ATT_ROL              1.726      0.248      0.420      2.260      2.260      1.744
+FC_ATT_PIT             -0.953      0.658     -5.100      0.090      5.100      1.158
+FC_ATT_YAW             90.702      0.912     89.180     93.540     93.540     90.706
+FC_Votage              14.952      0.150     14.810     15.340     15.340     14.952
+FC_SenserTMP           39.279      0.102     39.100     39.400     39.400     39.279
+FC_CTRLOUT_PWM1      4900.695   2011.816      0.000   6673.000   6673.000   5297.567
+FC_CTRLOUT_PWM2      5012.840   2071.213      0.000   6812.000   6812.000   5423.881
+FC_CTRLOUT_PWM3      4695.691   1913.661      0.000   6561.000   6561.000   5070.662
+FC_CTRLOUT_PWM4      4969.187   2024.182      0.000   6686.000   6686.000   5365.644
+
+== 频谱主峰 (top3) ==
+  FC_ACC_X       19.3Hz, 19.1Hz, 35.4Hz
+  FC_ACC_Y       19.3Hz, 19.1Hz, 35.4Hz
+  FC_ACC_Z       1.4Hz, 1.6Hz, 1.2Hz
+  FC_GYR_X       19.3Hz, 19.1Hz, 9.8Hz
+  FC_GYR_Y       1.4Hz, 1.6Hz, 2.1Hz
+  FC_GYR_Z       11.5Hz, 9.8Hz, 11.3Hz
+
+== PID 阶跃响应 ==
+  FC_ATT_ROL: amp=1.26  rise=0.03s  OS=16.2%  settle=0.60s  ssErr=0.00
+  FC_ATT_PIT: amp=0.36  rise=0.06s  OS=252.8%  settle=nans  ssErr=-0.21
+  FC_ATT_YAW: amp=-0.41  rise=0.00s  OS=107.1%  settle=nans  ssErr=-0.04
+  FC_ALT_FU: amp=-0.66  rise=2.15s  OS=15.4%  settle=nans  ssErr=0.09
+
+== 轴耦合(Pearson r) ==
+  FC_ATT_ROL~FC_ATT_PIT    = +0.272
+  FC_GYR_X~FC_GYR_Y        = +0.230
+  FC_ACC_X~FC_ACC_Y        = -0.036
+
+== 静态漂移 / 零偏 ==
+  FC_GYR_X: bias=+0.326  noise_std=40.362
+  FC_GYR_Y: bias=+0.499  noise_std=21.969
+  FC_GYR_Z: bias=-3.546  noise_std=15.106
+  alt_static_drift_per_s = +0.020
+
+== 异常告警 ==
+  [!] FC_GYR_X 峰值 359 > 200.0
+  [!] FC_GYR_Y 峰值 617 > 200.0
+  [!] FC_ACC_X 频谱主峰 19.3Hz 能量/中位 476.6x, 建议 notch
+  [!] FC_ACC_Y 频谱主峰 19.3Hz 能量/中位 206.0x, 建议 notch
+  [!] FC_ACC_Z 频谱主峰 1.4Hz 能量/中位 303.9x, 建议 notch
+  [!] FC_GYR_X 频谱主峰 19.3Hz 能量/中位 312.2x, 建议 notch
+  [!] FC_GYR_Y 频谱主峰 1.4Hz 能量/中位 350.1x, 建议 notch
+  [!] FC_GYR_Z 频谱主峰 11.5Hz 能量/中位 206.4x, 建议 notch
+  [!] FC_ATT_PIT 出现 122 点连续不变, 可能卡死
+
+== 调参建议 ==
+  - FC_ATT_PIT 超调 252.8% 偏大, 建议减小 Kp 或增大 Kd
+  - FC_ATT_YAW 超调 107.1% 偏大, 建议减小 Kp 或增大 Kd
+  - FC_ALT_FU 上升 2.15s 偏慢, 可适当增大 Kp
+
+== 异常事件 (88) ==  详见 anomaly/events.txt
+  t=21.935s  FC_ATT_PIT jump delta=-0.30
+  t=21.955s  FC_ATT_PIT jump delta=-0.53
+  t=21.985s  FC_ATT_PIT jump delta=-0.68
+  t=22.010s  FC_ATT_PIT jump delta=-0.54
+  t=22.030s  FC_ATT_PIT jump delta=-0.69
+  t=22.050s  FC_ATT_PIT jump delta=-0.58
+  t=22.080s  FC_ATT_PIT jump delta=-0.47
+  t=22.210s  FC_ATT_PIT jump delta=+0.32
+  t=22.230s  FC_ATT_PIT jump delta=+0.34
+  t=22.260s  FC_ATT_PIT jump delta=+0.45
+  ... (78 more)

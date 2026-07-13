@@ -1,0 +1,671 @@
+
+# 开发日志 — 匿名凌霄室内四旋翼无人机
+
+> **规则（强约束）**：
+> 1. **每次开发会话开始前必须读取此文件**，了解当前进度和未解决问题。
+> 2. **每次解决问题后必须立即追加记录**，格式：`[日期] [问题] → [原因] → [解决方案] → [教训]`
+> 3. **每次完成一个功能后必须更新"当前进度"节**，标明已完成/进行中/待做。
+> 4. **思考和回答必须紧贴当前任务目标**，禁止偏离目标做无关扩展。
+> 5. 若本次修改涉及飞行安全，必须在记录中注明"⚠️ 安全影响"。
+
+
+---
+## GUI 路径可视化 — 大阶段全局计划锁定 (2026-05-27)
+
+[2026-05-27] [用户开启路径可视化"新大阶段"需求；担心多轮开发后细节遗失] → [已有 Phase 1 MVP 但缺少"必经验收门 + 串行阶段 + 禁止自主推进"的硬约束] → [研究 Foxglove/QGC/MissionPlanner/Cesium/three.js/pyqtgraph 主流方案；用 askQuestions 锁定 9 项关键决策 D1-D9；写入 `gui/path_viz_master_plan.md`（P0-P7 串行计划+每阶段验收门+禁止动作清单）；摘要锁进 `/memories/repo/path-viz-plan.md`；`.github/copilot-instructions.md` 增加"开发前必读主计划"约束] → [教训：长周期大阶段必须先固化"决策+阶段+验收门"三件套，不能直接写代码；用户原话"如果我不主动说要进行下一个步骤，你就不能私自的做决定"是硬约束。]
+
+**当前阶段：P10 完成 (2026-05-29)，GUI 路径可视化大阶段全部完成 (P0-P10)；2026-05-30 补丁修复 7 项 UI bug**。
+
+[2026-05-30 GUI 7-bug 修复批次] [用户报 7 个 GUI bug：(1) 4 个视图都没有"保留路径秒数"按钮 (2) 单平面视图纸飞机太大、希望默认关闭自动缩放并用鼠标滚轮缩放 (3) 3D 与单平面共开时一个会消失 (4) 日志 0xA0 中文显示为 `��������`乱码 (5) 设置按钮太小+多了"?"占位字符 (6) 日志横向滚动条只有左右点击键无可拖动滑块 (7) HUD 中取消勾选某项(如vx)后整个数值面板消失] → 根因：(1) `_Mini2DSettingsPanel` 缺 trail_seconds spinbox，且 main.py 2D 路径未把 trail_seconds 透到 PathTracker (2) `DEFAULTS_2D["view"]["auto_range"]=True`+`_apply_auto_range` 每帧调 setXRange 覆盖用户滚轮缩放 (3) QMainWindow 未启用 DockNestingEnabled，多 dock 同 area 默认 tabify，OpenGL+raster 混杂时 Qt 隐藏一个 (4) `Frame.color_str` 用 `decode("ascii", errors="replace")`，STM32 端 GBK 中文高字节全变 `?` (5) 两处 QToolButton text 写死 `"? 设置"`（"?" 实为不可显示字符的占位）且未设 minimumSize (6) QTextEdit 默认 QScrollBar 在暗色背景下滑块无独立颜色，与 add-line 同色看不见 (7) `_build_rows` 用 deleteLater 异步删旧 QLabel + 重建 + adjustSize 早于 deleteLater 处理，导致 sizeHint 偶发 0/_reposition 把 overlay 移到不可见位置；apply_settings 末尾 setVisible(True) 不够，缺 show()/raise_()/update() → 解决方案：① `ano_protocol.py:Frame.color_str` decode 改 gbk + utf-8 fallback；② `path_2d_view_widget.py`：DEFAULTS_2D["path"] 加 `"trail_seconds": 20.0`；DEFAULTS_2D["view"]["auto_range"]=False；`_Mini2DSettingsPanel` 路径组新增 "保留秒数" QDoubleSpinBox emit `path.trail_seconds`；`_apply_auto_range` 非自动模式仅 disableAutoRange 不再 setXRange/Y；新增 `_apply_view_range_initial()` 只在 `_build_scene` 启动时 + `view.auto_range` 切换时 + `view.fixed_range_cm` 改时调用一次；3 处 settings 按钮文字 `"? 设置"` → `"设置"` + setMinimumSize(72,26) + QSS padding/font-size；③ `path_visualization_widget.py` 设置按钮同样处理；④ `log_view.py` QTextEdit stylesheet 追加完整 QScrollBar QSS（横/竖滑块 #5A5A5A + min-width/height 30 + hover #7A7A7A + pressed #9A9A9A + add/sub-line #3A3A3A）；⑤ `main.py`：构造函数 `setDockNestingEnabled(True)` + `setDockOptions(AnimatedDocks|AllowNestedDocks|AllowTabbedDocks)`；`_build_feature_docks` 改用 `splitDockWidget(prev, cur, Qt.Horizontal)` 串接 docks（除首个仍用 addDockWidget）；新增 `_on_path_viz_2d_settings_changed(cfg_key, settings)` 替换原 `_config.set` lambda，检测 `path.trail_seconds` 变化 → 写主 `path_viz.settings` + `_apply_path_viz_settings` 推 PathTracker + 同步到 3D widget + 同步到其它 2D widgets；⑥ `hud_overlay_widget.py:_build_rows` 删旧 widget 时增加 `w.hide()`；新加 QLabel 都显式 `show()`；末尾增加 `self._grid.activate(); self._grid_host.updateGeometry(); self._grid_host.adjustSize(); self.updateGeometry(); self.adjustSize()`；`apply_settings` 末尾 visible=True 分支增加 `_grid_host.show(); self.show(); self.raise_(); self.update()` → 验证：P7/P8/P9/P10 smoke 全绿 → [教训：① 协议 0xA0 字符串帧上位机解码 STM32 端中文必须用 GBK 不是 ASCII，源码 ASCII 默认行为是写代码时未考虑中文日志的历史遗留；② pyqtgraph PlotWidget 想要"用户自由缩放"必须确保每帧渲染回调里不再 setXRange/Y，否则鼠标滚轮缩放会被下一帧重置——这是新手常见陷阱；③ QMainWindow 多 dock 默认 tabify 是默认行为，OpenGL widget 作为 Dock 内容时与普通 raster widget 同 area 极易触发"另一个变不可见"问题，必须 setDockNestingEnabled+splitDockWidget 显式拆分；④ QFrame 内含动态构建 QGridLayout 时，takeAt+deleteLater 是异步的，重建后 adjustSize 可能拿到陈旧 sizeHint，必须 `_grid.activate()` 强制立即重算 + 末尾 show()/raise_()/update() 三连；⑤ Qt 暗色主题下 QScrollBar 默认 QSS 滑块与轨道同色看不见，必须显式给 handle 设 background+hover+pressed 颜色 + min-width/min-height 才能拖动；⑥ Mini 设置面板"? 设置"那个 "?" 是历史代码写死的占位字符（开发者本想用图标后忘换），不是编码问题。]
+
+[2026-06-21 GUI README 环境说明补齐] [用户指出 `gui/README.md` 没写清楚怎么进环境] → [原 README 只有 `python gui/main.py` 和单条 `pip install PySide6`，缺少虚拟环境创建/激活、从仓库根目录启动、`python -m gui.main` 推荐入口，以及 2D/3D 可视化真实依赖；同时 `gui/requirements.txt` 也未覆盖 `numpy/pyqtgraph/PyOpenGL`] → [补充 README：Windows PowerShell 下 `python -m venv .venv`、`.\\.venv\\Scripts\\Activate.ps1`、`python -m pip install -r gui\\requirements.txt`、`python -m gui.main`、Fake 模式启动与常见激活失败/缺依赖排查；同步补全 `gui/requirements.txt` 为 `PySide6==6.11.1`、`numpy`、`pyqtgraph>=0.14,<0.15`、`PyOpenGL`] → [教训：文档里写启动命令不等于写了“如何进环境”；凡是 GUI/工具类仓库，README 至少要覆盖 4 件事：在哪个目录执行、怎么建 venv、怎么激活、怎么按依赖文件安装，否则新环境复现一定出错。]
+
+[2026-06-21 GUI 运行环境纠偏] [用户指出之前给出的 `.venv` 激活命令是错的，启动可视化仍报缺库] → [我只看到了仓库里存在 `.venv`，但没先核对历史成功运行路径；而仓库根 [run_gui.bat](run_gui.bat) 已明确写着“锁死用 Python 3.13 启动 GUI（默认 python 是 3.14 缺依赖）”，说明历史上实际可用环境一直是 `C:\Users\20399\AppData\Local\Programs\Python\Python313\python.exe`，不是 `.venv`] → [执行 Python 3.13 导入核验 `import PySide6, numpy, pyqtgraph, OpenGL` 通过；修正文档 [gui/README.md](gui/README.md)，明确推荐 `run_gui.bat` 或直接 `C:\Users\20399\AppData\Local\Programs\Python\Python313\python.exe -m gui.main`，并标明仓库 `.venv` 是 Python 3.14、当前不可作为 GUI 可视化环境] → [教训：判断“正确环境”不能只凭目录里有没有 `.venv`，必须先查现有启动脚本、已验证测试解释器和历史成功命令；对 GUI/工具链类项目，`run_gui.bat` 这类 launcher 往往比 README 更接近事实。]
+
+
+[2026-05-29 P10 完成] [用户书面"进入 P10"，要求实现：数据源抽象接口（IPositionSource/IAttitudeSource/IPointCloudSource/IAnchorSource）+ LingxiaoImuSource 适配器、视角预设按钮（俯视/侧视/自由）、轨迹 CSV 导出按钮、主题适配验证、P6#4 长稳压测补回] → 新建 `gui/sources/__init__.py` + `gui/sources/interfaces.py`（# -*- coding: gbk -*- 头）：4 个 ABC 接口 + 3 个 frozen dataclass（PositionReading/AttitudeReading/AnchorPoint）+ LingxiaoImuSource(IPositionSource, IAttitudeSource) 包装 bus.tracker.snapshot()，`as_attitude_source()` 返回内部 _AttView 适配器解决多继承同名 latest() 冲突；扩 `path_visualization_widget.py`：`_SettingsPanel` 顶部 ops 条新增 3 视角按钮（俯/侧/自由）+ 1 CSV 按钮 + 2 新 Signal（viewpoint_preset_requested(str) + export_csv_requested()），PathVisualizationPlaceholder 同名 2 Signal 透传 + 在 3 处 wiring 站点（non-GL fallback + GL splitter + new_panel 替换）全部连接，新增 `_VIEWPOINT_PRESETS` 字典（top: elev=89/azim=0、side: elev=5/azim=90、free: elev=28/azim=45 全 dist=600）+ `_on_viewpoint_preset(name)` 写 self._s["render"] + setCameraPosition + emit settings_changed，新增 `export_path_csv(path)` 写 `t_mono,x_cm,y_cm,z_cm` header + N 行返回点数；扩 `main.py`：viz_widget.export_csv_requested → `_on_path_viz_export_csv()` 用 QFileDialog.getSaveFileName(filter="CSV") + QMessageBox.information 成功提示；主题适配已存在 theme_service.py，无需新增。新建 `gui/test/_smoke_phase_p10.py` 5 case：①interfaces dataclass + Mock IPositionSource 子类（含验证 ABC 不可直接实例化）②LingxiaoImuSource is_available/latest/latest_attitude + as_attitude_source 适配器 ③视角预设 top/side/free 字段更新 + emit 计数 ④export_path_csv 写入 N+1 行 + 空 snap 只写 header ⑤长稳定性微压 200Hz×5s=1000 帧 tracemalloc 内存增长 <5MB（实测 +0.00MB、1700+ fps、peak 0.06MB）。全回归 P2/P4/P5(reset fps=30)/P5.5/P6/P7/P8/P9/P10 全绿。 → [教训：① 接口包 `__init__.py` 必须把 dataclass（PositionReading 等）也 re-export，否则 smoke `from gui.sources import X` 报 ImportError；② 多继承 IPositionSource+IAttitudeSource 时两者都有 latest() 方法名冲突——选择策略：让 LingxiaoImuSource 的 latest() 实现 IPositionSource，另开 latest_attitude() + as_attitude_source() 返回内部 _AttView(IAttitudeSource) 适配器；③ PathSnapshot 字段是 `pos_cm: tuple[float,float,float]` 和 `attitude_deg: tuple` 不是 `x_cm`/`roll_deg` 散字段，写适配器前必读 telemetry_models.py；④ ConfigService 是扁平 dot-key（`d['path_viz.settings']` 一整树），不是嵌套 `d['path_viz']['settings']`——重置 fps 必须用扁平 key 否则 KeyError；⑤ pyqtgraph GLViewWidget.setCameraPosition(distance=, elevation=, azimuth=) 即时生效，elevation=89 接近俯视（90 时 gimbal lock 风险，留 1° 余量）、5° 接近侧视（0° 在某些版本会平面退化）；⑥ tracemalloc 测内存增长比 psutil 更准——单元测试场景下 RSS 噪声太大，tracemalloc.get_traced_memory() 只计 Python 对象分配；⑦ 顶部 ops 条放预设/CSV 比塞进折叠组组合体验更好——用户一眼能看见。] **大阶段完成：GUI 路径可视化 P0-P10 全部 ✅**。
+
+[2026-05-29 P9 完成] [用户书面"开始 p9"，要求实现 HUD 叠加层 + 数字面板 Dock + 3D 世界刻度尺：3D 视图角落浮窗实时显示 vx/vy/vz/vmag/roll/pitch/yaw/x/y/z/h 11 项；可独立开关每项；可拖拽改位置；可调透明度/字号/颜色；可同时通过 QDockWidget 数字面板显示+追踪 min/max；可加 3D 坐标系刻度尺] → 新建 `gui/widgets/_hud_model.py`（HUD_ITEM_KEYS/META/DEFAULTS + extract_hud_values 计算 vmag=sqrt(vx²+vy²+vz²)、h=z + deep_merge_hud）；新建 `gui/widgets/hud_overlay_widget.py`（HudOverlayWidget(QFrame) GL 子浮窗，QSS rgba 半透明，等距字体，11 行 QGridLayout，eventFilter 监听宿主 Resize 重定位 clamp，鼠标拖拽 globalPosition 映射 + 位置/设置变更 signal）；新建 `gui/widgets/numeric_panel_dock.py`（NumericPanelDock(QDockWidget) 三分组 速度/姿态/位置 × 11 行，_Row 记录 min/max，全部清零按钮，按组隐藏空组）；扩 `path_visualization_widget.py`：DEFAULTS 加 hud 子树（items/overlay/ruler），_SettingsPanel 新加 `_build_group_hud`（叠加层外观/显示项目11/世界坐标刻度 三子组），_view 创建后挂 _hud_overlay 子件 + 双向 settings sync，新增 `_rebuild_axis_ruler`（GLLinePlotItem 三轴 minor tick + GLTextItem major label，跟 grid.size_cm 联动），_on_panel_value_changed 新加 hud 分支（路径起 hud.ruler 时重建尺），update_snapshot 末调 overlay.update_snapshot，cleanup_gl 拆 overlay+_ruler_items；扩 `main.py`：实例化 NumericPanelDock 加 Dock + 菜单 toggle，path_updated→update_snapshot，settings_changed↔viz_widget 双向桥；扩 `config_service.py` _DEFAULTS 加 `path_viz.hud.settings` + `features.numeric_panel`。新建 `gui/test/_smoke_phase_p9.py` 6 cases：vmag/h 计算、overlay apply/update、NumericDock min/max+reset+组隐藏、3D widget hud 分支 emit、3D ruler toggle（_gl_ok 不在时跳过）。 P2/P4/P5(reset 后)/P5.5/P6/P7/P8/P9 全绿。 → [教训：① **新 Python 源文件含中文字符串必须开头 `# -*- coding: gbk -*-`**——本仓默认 GBK/CP936，缺声明 Python 用 UTF-8 解析中文 docstring 抛 SyntaxError；② multi_replace 插入多个新方法时容易把相邻方法的局部变量声明吃掉（本次 `_build_group_render` 的 `gb = QGroupBox(...)` 被前次 P9 编辑遗失），插入后必须 read_file 校验前后边界完整；③ HUD 浮窗最干净的实现是 QFrame 直接 setParent(GLViewWidget)，eventFilter 监听 host Resize 重定位——避免重写 GLViewWidget 的 paintGL 干扰 pyqtgraph 内部；④ 拖拽用 mouseMoveEvent + globalPosition().toPoint() 映射到宿主 mapFromGlobal，clamp 在 host.rect() 内防止漂出视野；⑤ pyqtgraph GLViewWidget 在 QT_QPA_PLATFORM=offscreen 下走 fallback，_gl_ok=False，所有需要 GL item 的 smoke case 必须先 `if not w._gl_ok: skip`；⑥ 持久化配置漂移会反复破坏依赖默认值的 P5-6 case_6（fps==30 假设），不是回归——重置 config.json.path_viz.settings.render.fps=30 后即过；⑦ `_on_panel_value_changed` 局部用 `path.split(".")` 得 keys，子句重建条件应用 `path.startswith(...)` 而非误用未定义的 key。]
+
+
+[2026-05-29 P7 遗留两 bug 修复] [P8 验收时用户报告：① 2D 导航视图纸飞机看不见；② 路径只保留 7s 太短，希望可调] → ① 根因：`Path2DViewWidget._rebuild_icon_item` 用 `self._plot.plot(..., fillLevel=None, fillBrush=brush)`，fillLevel=None 实际不填充，只画 outline；而 outline 默认色 `[40,40,50]` 与 bg `[40,40,50]` 完全同色 → 视觉完全不可见。② 根因：`残留秒数`按钮自 P5 起就存在于 3D widget 面板（1–600s，默认 20s），但 `gui/config.json` 持久化了早期开发期写入的 `trail_seconds=7.0`，覆盖了默认值。→ 修复 ①：`_rebuild_icon_item` 改用 `QGraphicsPolygonItem`（QBrush 真填充 + QPen cosmetic outline），直接 `vb.addItem(self._icon_item)`；`_update_icon` 改用 `QPolygonF.append(QPointF)` + `setPolygon`；`cleanup` 加 `vb.removeItem` 释放（因为不是 PlotItem 子项，plot.clear() 不会清）；DEFAULTS_2D["icon"] outline_color 改 `[10,10,15,255]` + outline_width 1.5→2.0 提高对比度。修复 ②：`gui/config.json` `trail_seconds 7.0 → 60.0`；告诉用户调节入口在 3D 视图 ⚙ 设置 → 路径 → 残留秒数（同步影响所有 viz）。回归 P7 6/6 + P8 7/7 全绿。 → [教训：① pyqtgraph PlotDataItem 的 fillLevel 是"沿 y 方向填到该水平线"，不是"闭合多边形填充"——画封闭图形该用 QGraphicsPolygonItem 而不是 plot()；② 直接挂到 ViewBox 的 QGraphicsItem 不会被 plot.clear() 清，cleanup 必须显式 vb.removeItem；③ "看不见"≠"没渲染"——颜色与背景同色是常见隐 bug，默认调色板应预留对比度；④ 持久化配置的旧值会盖默认值，每次"功能似乎没用"先排查 config.json 是否漂移了。]
+
+[2026-05-29 P8 完成] [用户书面"进入 P8"，要求 3D/2D 路径都改为 K 段渲染：近粗近亮远细远淡，K 默认 8 段] → 新建 `gui/widgets/_path_segments.py` (3 函数：segments_by_age 等长切分+端点续接、lerp_scalar、lerp_alpha_byte)；3D widget DEFAULTS["path"] 扩 6 字段(render_mode/k_segments/head_width/tail_width/head_alpha/tail_alpha)，_rebuild_path_item 改造为 segmented 分支建 K 个 GLLinePlotItem 各带 prebaked width / fade 分支保留 P5 单线 Nx4 alpha，update_snapshot 按桶 setData(pos+color)，cleanup_gl 加 _path_segments 清理，_SettingsPanel 加"路径分段"6 行；2D widget 同模式镜像（K 个 PlotDataItem 各带 mkPen(width=)）；_smoke_phase_p8.py 7 case 全绿（分桶 / 3D K=8 段数 / 切模式不崩 / 段宽单调 1→4 / 2D 投影一致 / cleanup 幂等 / DEFAULTS 字段全）；P5/P7 老测试因默认 mode 变 segmented 报"_path is None"，加 apply_settings({render_mode:"fade"}) 切回单线后绿；P2/P4/P5.5/P6/P7/P8 全绿（P5-6 是已知 config 漂移假失败非回归）。 → [教训：① pyqtgraph GL/2D 的线宽都是 per-item 不是 per-vertex，要"分段不同宽"只能拆 K 个 LineItem 各自固定 width，per-frame 只 setData(pos+color)；② 等长切分 K 段+端点续接是关键，segments[i] 末点 = segments[i+1] 首点，否则视觉断节；③ K 段架构默认接管后，旧测试访问 `_path/_path_item` 直接 NoneError，需 apply_settings 显式切回 fade 模式而不是改测试断言（前者最小破坏）；④ ConfigService 是整树持久化（path_viz.settings 一个 key 存全部 path.* 子树），P8 新字段无需登记 _DEFAULTS——白名单设计的红利；⑤ render_mode 切换必须触发 _rebuild_path_item，已有的 panel _on_panel_value_changed grp=="path" 分支自动覆盖。]
+
+[2026-05-28 P7 完成] [用户书面"进入 P7" + "Start implementation"，要求 XY/XZ/YZ 三平面 2D 投影视图与 3D 视图并列，Foxglove 风格浮窗+QDockWidget 可吸附] → 新建 `gui/widgets/path_2d_view_widget.py` (~530 行)：DEFAULTS_2D（path/icon/grid/view 四组）+ _PLANE_TABLE（投影轴索引）+ _Mini2DSettingsPanel（独立设置面板，不复用 3D 的 _SettingsPanel 避免耦合）+ Path2DViewWidget（PlotWidget 而非 GLViewWidget，原生 2D 自带缩放/平移/网格；纸飞机多边形含尾凹 5 顶点；apply_settings/current_settings/cleanup 三 API 对齐 3D widget 接口）；`config_service.py` _DEFAULTS 加 6 个白名单 key (features.path_visualization_xy/xz/yz + path_viz_2d.*.settings + ui.main_window_state)；`main.py` 扩 _FEATURE_DOCKS 加 3 项 + 新增 _PATH_VIZ_KEYS / _PATH_VIZ_2D 注册表；`__init__` 遍历 3 个 2D widget 各自接 path_updated/apply_settings/settings_changed（闭包 ck=cfg_key 防 late-binding）/reset_requested；`_on_feature_toggled` 用 `_any_path_viz_enabled()` 替换单 key 判断（任一 viz feature 开启则启动 PathTracker 广播）；__init__ 末加 restoreState(base64)，closeEvent 加 saveState→base64 持久化 Dock 布局；新建 `gui/test/_smoke_phase_p7.py` 6 case：三平面构造/投影一致性 XY=(x,y)·XZ=(x,z)·YZ=(y,z)/点数一致/apply_settings 深合并+current_settings 深拷贝/cleanup 幂等/注册表完整。P2/P4/P5.5/P6 回归全绿。 → [教训：① 不抽 _BaseVizWidget 基类是对的——GLViewWidget 与 PlotWidget 渲染栈差异太大，YAGNI 直到 P9 共享代码确实多再抽；② ConfigService 白名单设计要先扩 _DEFAULTS 再写读写代码，否则 set 静默丢失；③ for 循环里 connect 闭包必须用默认参数绑当前 key（`lambda s, ck=cfg_key: ...`），否则 4 个 widget 全写到最后一个 key；④ QMainWindow.saveState 返回 QByteArray，用 toBase64() 转 str 落 JSON 配置；restoreState 必须在所有 Dock add_dock 完成之后调；⑤ restoreState 会覆写 Dock 可见性回上次值，要再用 features.* 校准一次保持菜单/Dock 同步；⑥ Path2DViewWidget 用 plotitem.getData() 拿回数据做投影断言，比拦截 setData 信号更直接；⑦ DEFAULTS_2D 必须用 _deep_merge 不是 dict.update，避免 path 子树被整段覆盖丢失字段。]
+
+[2026-05-28 P6#3 完成] [Dock 反复打开/关闭或主窗口关闭时担心 GL VBO 残留泄漏] → 在 PathVisualizationPlaceholder 类加 `cleanup_gl()` 幂等方法 + `closeEvent` hook：先标 `_gl_ok=False`（防 update_snapshot 在拆解中访问 _view），遍历清 _grid_items + axis 杆/圆锥头/字标/_nose/_cube/_path/_vel_arrow/_vel_head 共 12 个 GL item 引用置 None，最后兜底扫一遍 view.items 防漏。新增 P6-6 smoke：实测 view.items 13 → 0，多次调用幂等。P2/P4/P5.5 回归全绿。 → [教训：① pyqtgraph.opengl 没有公开"释放 GL"接口，只能 removeItem + 断 Python 强引用让 GC 回收 VBO；② cleanup 第一步必须先把 `_gl_ok=False`，否则信号槽残留触发 update_snapshot 会访问已半拆的场景；③ 用 getattr+setattr 循环置 None 比逐字段写更耐"未来加新 item 忘记同步"——但要兜底处理某些环境根本没该字段的情况；④ P6-6 smoke 必须用 QApplication 而非 QCoreApplication，否则 QWidget 创建失败；统一 main 入口的 app 类型简化了。]
+
+[2026-05-28 P6#1+#2 完成] [需要在数据通路上确保高频帧不撑垮渲染、并且任意一环异常不让 bus 崩] → 方案 A 时间窗节流（用户选）：emit `path_updated` 受 1/render_fps 窗口限制；窗口内的所有调用都被 drop；过期才发，发的是 tracker.snapshot() 当下最新值（自动 coalesce）。→ TelemetryBus 新增 `_emit_count/_drop_count` + `reset_throttle_stats()/get_throttle_stats()` 接口；`_maybe_emit_path` 包 try/except，snapshot 抛错时仍推进 `_last_emit_ts` 防 retry 风暴，status 发 WARN。新建 `gui/test/_smoke_phase_p6.py` 5 个 case：①200Hz×1s emit 上限验收（实测 28 emit / 172 drop ≤ upper 33）②渲染关时不进 emit/drop ③reset 计数清零 ④坏帧（长度错/未知 cmd）不入节流 ⑤snapshot 抛异常时 status 收 WARN + 恢复后能继续 emit。P2/P4/P5/P5.5 回归全绿（P5 case_6 已知 config 漂移非回归）。 → [教训：① 节流验收要量化（emit ≤ render_fps × dur + 容差），不能只看"没崩"；② 异常路径要让计数照样推进，否则下一帧立刻又试又抛——递归风暴；③ 摘要里看到"throttle 已存在"不等于"已验收"，缺验证 smoke 就等于没节流；④ 用 `(_ for _ in ()).throw(Err)` 替换方法是 monkey-patch 抛异常的最干净写法。]
+
+[2026-05-28 第三轮真机+用户洞察] [冷却补强方案离线 OK 但用户直接洞察："IMU 0x07 本身是 a 积分而来的 v，再用 v 积分出 xy 是双重漂移，GUI 补丁无法救"] → 决策：买光流传感器，等接入后融合 v 才会准，路径漂移问题**冻结**不再迭代。 → 修复：path_tracker.py 砍掉所有冷却状态机字段（_was_high/_in_cooldown/_cooldown_until_ts/_yaw_lock_deg）和常量（_V_ENTER/_V_EXIT/_COOLDOWN_S），on_velocity 退回到"死区→反旋转→直接积分"三段；snapshot 退回到直接读 IMU yaw。文件头注释更新为"等光流接入"。P2/P4/P5/P5.5 smoke 全绿（P5 case_6 已知 config.json 配置漂移假失败，非回归）。 → [核心教训：① IMU 0x07 = a∫dt 来的 v，本身就漂；再 ∫v dt 得 xy 是双重漂移，**任何不引入新传感器的 GUI 端补丁都治标不治本**——这是物理事实，不是算法不够好；② 用户工程经验比算法迭代更值钱——两轮失败 + 一句洞察就定了方向；③ 不要在传感器没就位前堆补丁刷里程，"等光流"比"再调一版冷却"更省工时；④ master plan 强约束起作用了：用户书面进入 P6 才动 P6 代码，避免了"补丁滚到 P7"。]
+
+[2026-05-28 第二轮真机] [用户报告：动态期方向都对了 ✓ / 任何运动停下瞬间 UI 都会反向漂移] → 根因：纯极简版没压 ZUPT 反弹（停下后 0x07 输出反向脉冲 5-10cm/s × 0.5s）和 IMU 0x03 yaw 自校正（停下后 -2.9°/s × 19s）。 → 修复：path_tracker 加入"运动→停止"过渡冷却状态机，新增字段 `_was_high/_in_cooldown/_cooldown_until_ts/_yaw_lock_deg`，常量 `_V_ENTER_CMPS=5.0 / _V_EXIT_CMPS=3.0 / _COOLDOWN_S=2.0`。on_velocity 用**原始** |v_body|（非死区后）跑状态机，触发冷却时锁住当前 IMU yaw；冷却期完全不积分、速度箭头清零；snapshot 冷却期 yaw 用锁定值，roll/pitch 实时。关键：只用 |v|，不用 yaw_rate（后者在 enable 前已被 0x03/0x04 噪声预积累，是上轮 5 层补丁的致命坑）。 → 离线验证：向前末位 0.5→−0.4cm、向左 1.0→0.4cm（ZUPT 反弹被吞）；cw90 66.8→63.5cm（旋转期累积仍在，冷却只压停下后）；P2/P4 全绿。 → [教训：① 用户"反向漂移"投诉本质是 ZUPT 反弹 + IMU 自校正双尾巴，集中在停下后 0.5-2s 释放；② 用 `|v_body|` 而非 `yaw_rate` 检测过渡是关键安全点——速度死区+滞回可靠，角速度信号在初始化前会被噪声污染；③ 离线 replay 末 5s 统计冷却"锁定帧=0"是正常的，冷却 2s 早过期，应看末位/最远值是否变小判断反弹被压；④ 旋转期 |v_body|=5-8cm/s 噪声会让 was_high=True，停下后噪声落 1-2cm/s 触发冷却 → 旋转停下也能锁 yaw，符合用户诉求。]
+
+[2026-05-28] [用户对 BUG9+10"5 层补丁方案"反馈：①cw90 停下后 cube 平滑慢慢转回去 100°（说明 yaw lock 真机没生效）②位移延迟特别高③每次变化不一样④越改越烂] → **根因**：5 层补丁互相打架——|v|EMA 增加 200ms 滞后；方向一致性把缓慢方向变化误判为反弹丢弃；yaw lock 在真机 `_yaw_rate_dps` 被噪声累积 → 进入 MOVING 后回不来；用户表现为"延迟+不可预测"。 → **决策**：用 askQuestions 给用户三选项（A 极简 / B 中间 / C 砍位置），用户选 A "所见即所得"，位移仅死区 2cm/s。 → **修复**：path_tracker.py 删除所有运动检测器/yaw 锁定/EMA/方向一致性逻辑；on_attitude 仅 `_latest_attitude=sample`；on_velocity 仅 `|v_body|<2 死区 + body→local 反旋转 + 直接积分`；snapshot.yaw 直接给 IMU 值。删除字段 `_is_moving/_static_pending_since/_vmag_ema_cmps/_dir_x/_dir_y/_last_att_ts/_last_att_yaw/_yaw_rate_dps/_locked_yaw_deg/_yaw_lock_active`；删除常量 `_V_ENTER/_V_EXIT/_YAW_RATE_*/_STATIC_HOLD_S/_V_DIR_DOT/_YAW_RATE_GATE/_VMAG_EMA_ALPHA`；仅留 `_V_DEADBAND_CMPS=2.0`。 → **离线 replay 验证**：静止 0cm（与门控版一样）/ 向前 0.5cm（一致）/ 向左 1.0cm（更小，因为没有方向 EMA 复杂行为）/ **cw90 66.8cm（旋转中 0x07 噪声反旋转积分，与门控版前 +5.6cm 差很大）**。P2-P5.5 全绿。 → [教训：① IMU 0x07 在旋转中本身就有几 cm/s 噪声，**不加角速度门控 cw90 必然漂 60+ cm**——这是 IMU 物理事实不是 GUI bug；② 多层补丁互相干扰会让用户看到"不可预测+延迟"，比单一物理偏差更难接受；③ 真机 `_yaw_rate_dps` 在 enable() 前已被 0x03/0x04 噪声累积成非零（即使 dt>5ms 守门），enable 后第一帧 on_velocity 检查角速度 > 5°/s → 立即解锁 → 永远 MOVING；④ 算法越简单越能解释给用户听，"哦旋转就是会飞出去"用户能懂，"为什么这次方向对那次方向反"用户没法忍；⑤ askQuestions 必须给用户决策权而不是替他决定算法，这是用户原话"越改越烂"的潜台词。]
+
+[2026-05-28] [BUG9 cw90 旋转停下后 cube 自己慢慢逆转 120° + BUG10 横移停下后 cube 反向拉回 + 渲染端 yaw 改善需求] → **根因 1 (BUG9)**：IMU 0x03 yaw 在机械停止后会持续自校正漂移 **19s 共 -54°（约 -2.89°/s）**——光靠 |yaw_rate| 阈值过滤不掉，因 IMU 自校正速率 < 5°/s。**根因 2 (BUG10)**：0x07 ZUPT 反弹段虽然被方向一致性丢弃，但**渲染端速度箭头**直接显示原始 vx/vy 仍有视觉拉回。**根因 3 (隐藏)**：on_attitude 用任意 dt 计算 yaw_rate，但 0x03/0x04 yaw 解码有 0.003° 差异、时间间隔仅 0.4ms → inst = -7.5°/s 假角速度被 EMA 拉成 -20°/s，触发误 MOVING 后回不来 STATIC。→ **三件套修复**：① path_tracker.py 引入 **Motion Detector + Static Yaw Lock 架构**：联合 |v| EMA + |yaw_rate| EMA + 0.4s 滞回窗判 STATIC/MOVING；ENTER (5cm/s 或 5°/s)、EXIT (2cm/s 且 4°/s)；进入 STATIC 瞬间 snapshot 当前 IMU yaw 为 `_locked_yaw_deg`，snapshot() 输出锁定值（roll/pitch 保持实时不锁）；② on_velocity STATIC 时积分=0 且 `_vx_local=_vy_local=0`，速度箭头自然消失（消除 BUG10 视觉拉回）；③ on_attitude **dt < 5ms 时跳过 yaw_rate 估算**（防 0x03/0x04 解码差异放大）→ 离线 4 场景验证（gui/replay_fix.py 扩展末 5s 锁定统计）：静止 402/402 锁定、向前 402/402、向左 383/401、cw90 392/402；render yaw 末 5s 极差从原 IMU 漂移 -54° 降到 0~13°；P2~P5.5 smoke 全绿 → [教训：①IMU yaw 自校正速率可达 -2.9°/s，单纯角速度门控阈值卡 2°/s 会"永远 MOVING"，必须设 ≥ 4°/s 让自校正速率落入 STATIC；②on_attitude 计算瞬时角速度必须设 dt 下限（≥5ms），否则 0x03/0x04 双源同时进 PathTracker 会用 0.4ms 间隔放大 0.003° 差异成 7.5°/s 假角速度；③"现实停下=UI停下"需要 GUI 端主动 snapshot yaw 锁定，不能指望 IMU 0x03 自己稳；④调试 IMU 漂移不要急于改阈值，先把 dt 退化场景验证清楚；⑤验证脚本应同时打印 IMU 原值 + 渲染值 + lock 帧数比，单看末位 pos 无法发现 yaw lock 失效。]
+
+[2026-05-27] [真机验证后用户报 4 个 GUI 视觉 BUG：①cube yaw 方向反 ②静止漂移更严重 ③横移停下后 cube 回退 ④横移时 cube 还伴随线速度漂] → **真实数据离线分析（gui/data/2026-05-27 4 个 JSONL）**：①0x07 在静止时 vx/vy 全 ≡ 0（不可能漂，用户描述②实际指其他症状）②向左测试 vy 时序铁证：主动段 [+5,+9,+13,+16,+15,...] 0.56s 后**反弹段持续 1.4s [-6,-6,-7,...]**——IMU 0x07 内部 ZUPT/卡尔曼滤波器的减速虚拟速度估计③CW90 旋转测试不加门控积分末位 (-58.9, -29.8) cm = **66 cm 漂移**！0x07 旋转中仍报 ±5~8 cm/s 假速度被变化中的 delta_yaw 反旋转疯狂积分 → **修复三处**：① path_tracker.py 加角速度门控：on_attitude 内 EMA 计算 _yaw_rate_dps（0.3旧+0.7新），on_velocity 内若 |yaw_rate|>5°/s（静止噪声底 ~0.6°/s）则 vx_l=vy_l=0；② path_tracker.py 加"主导方向一致性"运动状态机：IDLE→MOVING 阈值 5cm/s，进入时记录单位方向(_dir_x,_dir_y)；MOVING 时若 v·dir≤0（反向）或 |v|<deadband(2cm/s) → 立即停积分，连续 0.4s 才退回 IDLE；同向积分同时 EMA(0.85/0.15) 更新主导方向；③ widget path_visualization_widget.py cube yaw 渲染翻号：`m.rotate(-yaw_local,0,0,1)` —— IMU NWU yaw 经 pyqtgraph CCW 正约定+默认相机斜视角导致视觉反向，渲染端取负即可；④ P4 case_2 断言更新：yaw=90° 机头从 +y 改为 -y（与新约定一致）→ 离线 replay 验证 4 场景全部符合预期：静止 (0,0)、向前 1.3cm、向左 +2.1cm、CW90 漂 3.8cm；P1-P5.5 全绿 → [教训：①IMU 0x07 在减速段会产生持续 1.4s 的反向虚拟速度（ZUPT 残差），单纯 deadband+迟滞过滤不掉，必须用"主导方向一致性"丢弃反向值；②旋转中 0x07 自身就有几 cm/s 噪声，必须用 yaw 角速度门控（>5°/s 冻结）才能压住，否则 33s 转 90° 漂 66cm；③pyqtgraph rotate() 是 CCW 正但用户视觉期望与 IMU NED-like 体感不符，渲染端翻号是最干净修复，不动数据层；④IMU 输出"速度"≠物理位移积分；ZUPT 设计使整段积分→0，用户期望 GUI 显示位移则必须主动忽略反弹段，承担"位移略偏小"的代价；⑤数据驱动诊断 > 假设驱动：先录真机 JSONL 看 vx/vy 时序再改代码，避免又错方向]
+
+[2026-05-28] [用户列出 5 项 P5 后补丁需求：①传感器帧记录给 AI 诊断 ②机身轴默认显示 X/Y/Z 字符 ③三轴+机头+速度向量改"真箭头"非裸线 ④静止漂移 ⑤水平移动方向错 + XYZ 比例不一致] → [4/5 必须真数据才能诊断；先把 1/2/3 做完，并通过 1 产出 JSONL 喂回 4/5] → [① `gui/services/frame_recorder.py`：FrameRecorder(QObject)、RECORD_CMDS = {0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x0E}、JSONL 行格式 {t_mono, t_iso, dest:"0xFF", cmd:"0x03", len, hex, fields(decode_attitude_euler/quat 等)}，_meta 头尾标记，64KB 缓冲 + 每 32 帧/0.5s flush；② main.py 接入：菜单 File → "开始/停止传感器帧记录" toggle（Ctrl+R）+ QFileDialog 选 .jsonl 路径，状态栏 ●REC N 帧 红字（隐藏式 permanent widget），SerialWorker.frame_received→recorder.on_frame；③ widget _SettingsPanel 新增"记录"分组（开始/停止按钮 + 状态 label），signal record_toggle_requested 转发给主窗口的 QAction.setChecked（单一源），公共 set_recording_state(active,path,count) 双向同步；④ widget DEFAULTS["axis"] 加 head_radius_cm/head_length_cm/labels_visible/label_size/label_offset_cm；DEFAULTS["vel_arrow"] 加 head_radius_cm/head_length_cm；⑤ _make_cone_mesh 沿 +X 顶点在原点的圆锥（apex+base_center+rim×cols 顶点；侧面 cols 三角 + 底面 cols 三角）；⑥ _rebuild_axis：3 个 GLMeshItem 圆锥头（X 红、Y 绕 Z+90°变绿、Z 绕 Y-90°变蓝）+ 3 个 GLTextItem 字标（QFont 加粗 14pt）；⑦ _rebuild_vel_arrow 加圆锥头，每帧 axis-angle 算从 +X 到 (ux,uy,uz) 旋转：cross=(0,-uz,uy)，angle=acos(ux)；⑧ update_snapshot 给每个 cone 头/字标设 Transform3D（cube 同款 M 上 translate(L+off,0,0)），字标用 m.map() 算世界坐标后 setData(pos=)；⑨ _smoke_phase_p5_5.py 5 case 验证生命周期/白名单过滤（0xE0/0xA0/0x41 全被丢）/RECORD_CMDS 内容/DEFAULTS 新字段/_make_cone_mesh 形状] → [教训：① pyqtgraph.opengl 0.14 起 GLTextItem 可用，font 参数若环境不支持需 try/except 退化；② QAction 在 `__init__` 排序晚于 widget wiring 时，widget→action 的 connect 必须延迟到 menu 创建后再绑；③ 圆锥 mesh 用 axis-angle 旋转最稳：(1,0,0)→(u,v,w) 的旋转轴 = (0,-w,v)，角度 = acos(u)，逆向 (-X) 时退化为绕 Z 180°；④ Frame dataclass 字段是 `dest`（不是 addr），新代码访问必须用 `fr.dest`；⑤ 配置已被用户改过（render.fps=100、trail_seconds=7），导致 P5 case_6 那条 `assert _render_fps==30` 假失败 — 不是回归，配置漂移；⑥ 0x03 帧 LEN=7（含 1 字节 fusion_sta），写测试不要漏；⑦ JSONL "_meta" 头尾标记对离线诊断脚本很关键，便于多文件拼接区分。]
+
+[2026-05-27] [P5 完整参数面板 + 持久化（D7 + 用户提到的"等等还有很多"参数：坐标轴/网格/路径/立方体/机头球/速度箭头/渲染/控制按钮）] → [P4 widget 是写死常量；要让 7 组共 30+ 参数都能拖动且持久化，必须把常量提到 dict 顶部 + 右侧设置面板 + 信号回路 + ConfigService 持久化整树] → [① 完全重写 `path_visualization_widget.py`：顶部 7 组 `DEFAULTS`（数值等同 P4 → 默认零回归），新增 `_ColorButton`（QColorDialog 弹色 + 样式表显色）/`_SettingsPanel`（QScrollArea+7×QGroupBox+QFormLayout），主部件 QSplitter 左视图右面板，⚙ 按钮切显隐默认关；信号 `settings_changed(dict)`/`reset_requested`/`refresh_requested`；`apply_settings(dict)` 深合并+重建（不回发信号），`_on_panel_value_changed(path,value)` 按组定向重建（_rebuild_cube/nose/axis/vel_arrow/grids/path_item/render，避免重建整场）；路径渐隐 fade=True 时 setData(color=Nx4 ndarray)，fade=False 单色；保留 `_NOSE_OFFSET_CM/_VEL_ARROW_SCALE` 等常量供 P4 测试沿用；② `ConfigService._DEFAULTS` 新增 `"path_viz.settings": {}` 放白名单；③ `main.py` 加 PathTrackerConfig import，启动后 `viz.apply_settings(config.get("path_viz.settings",{}))` 还原，一次性同步 `bus.set_render_fps`+`bus.update_config(PathTrackerConfig)`；接 settings_changed → `_on_path_viz_settings_changed`（写 config + 同步 bus）+ reset_requested → `bus.reset_path`；④ 新增 `_smoke_phase_p5.py` 6 case 验证默认 key 登记/默认值等同 P4/面板改值 emit+self._s 写入+apply_settings 深合并/fade Nx4 alpha 单调（实测 [0.0,0.5,0.9,1.0]）/fade=False 退单色/MainWindow 一体化（改 fps→bus._render_fps、改 trail_seconds→tracker.config、持久化命中、reset 不抛）] → [教训：① ConfigService 是白名单设计，加新 key 必须同时改 `_DEFAULTS`，否则 set/get 不报错但落盘丢失；② GLLinePlotItem.color 支持 Nx4 numpy 数组做逐点 alpha，渐隐用 `1 - age/trail_seconds`；③ widget 双向数据流必须分清两路：`apply_settings`=外部灌入不回发，`_on_panel_value_changed`=用户改必回发，否则启动还原时会立刻把还原值回写 config 触发死循环；④ 定向重建（按组）远胜重建整场，否则每拖一下 QDoubleSpinBox 就闪屏；⑤ 重写前必须 PowerShell `Remove-Item` 删旧文件，`create_file` 不覆盖；⑥ 渐隐颜色数组用 `np.ones((N,4))` + 第 4 列乘 alpha；⑦ 模块常量加注 "向后兼容 P4 测试" 注释，否则下次重构容易误删。]
+
+[2026-05-27] [P4 姿态旋转 + 机头小球 + 速度箭头（D6 完整版）；中途修了 P3 的两个视觉问题：①三轴是世界轴没跟立方体走；②方块启动时悬在半空] → [P3 的 GLAxisItem 是世界系画的，没绑过 transform；D5 原文 "Z=0x05 绝对高度" 在飞控报 80cm 高度时方块直接飞 80cm 看起来"飞到半空"——用户期待"启用瞬间为零点"] → [① path_tracker：D5 微调，新增 `_z_offset_cm`，enable() 时记 `_z_offset=latest_height.alt_fu_cm`，_z_cm=0；on_height: `_z_cm = alt - _z_offset`；同步改 reset()；P2 case_2 断言改为 z=0 + 增量子断言；② widget P3：保存 self._axis 引用，update_snapshot 里同步 translate；轴长从 100→30cm；③ widget P4：导入 pyqtgraph.Transform3D，新增 _NOSE_RADIUS=4/NOSE_OFFSET=15/VEL_ARROW_SCALE=0.4 cm/(cm/s)/MAX_CM=120 常量；新增 _nose（GLMeshItem MeshData.sphere 黄色）和 _vel_arrow（GLLinePlotItem 橙色 width=3 mode=lines）；update_snapshot 构 M=T(pos)·Rz(yaw-yaw0)·Ry(pitch)·Rx(roll) post-multiply 顺序，cube/axis 共享 M，nose 在 M 上再 translate(NOSE_OFFSET,0,0)；vel_arrow 独立用 vel_local 方向，|v|<1 折叠零长；④ 新增 `_smoke_phase_p4.py` 6 case 验证 nose 在 yaw=90° 处于世界 (0,15,0)、yaw=yaw0 时机头在世界 +x、vel_arrow 末端 vx_l=100 偏 40cm、|v|<1 折叠、姿态不影响 vel_arrow] → [教训：① GLAxisItem/GLMeshItem 都接 setTransform，要让"跟随姿态"的元素共享同一 Transform3D；② pyqtgraph.Transform3D（=QMatrix4x4）的 translate/rotate 是 post-multiply，写顺序 T→Rz→Ry→Rx 等同于点先做 Rx→Ry→Rz→T，与 OpenGL ZYX 体外旋转习惯一致；③ "贴在某个面外侧"的子元素，最干净做法是父 transform 上再 translate，不要把局部偏移塞进 mesh 顶点；④ 速度箭头方向必须用已经反旋转过的 `vel_local`，不要用世界 vx/vy，否则启用之初机头朝东和朝北的飞机箭头方向解释会不一致。]
+
+[2026-05-28] [BUG4 静止漂移 + BUG5 水平移动方向错] → **BUG4根因**：0x07 vx_cmps 静止偏置 ~+0.5 cm/s，积分 60s → 30cm 漂移 → **BUG5a根因**：0x07 是机体系速度（FLU），PathTracker 错误地当世界系处理并做 yaw0 反旋转，导致"向前飞→GUI 显示向后" → **BUG5b辅助根因**：0x04 四元数 yaw 符号相反（匿名 IMU NED 旋转，z负；解码公式 NWU 未取反）。TelemetryBus 0x04 优先使 PathTracker 全程用错误负 yaw，delta_yaw 差 285° 方向翻转 → **修复三处**：① telemetry_decoder.py decode_attitude_quat：yaw_deg 取负；② path_tracker.py on_velocity：改为机体系 delta_yaw 旋转（归一化±180°边界）+ 2cm/s 速度死区，删 _yaw0_cos/_yaw0_sin；③ smoke_phase_p2.py：_quat_data z分量取反，case_2 sub-B 断言从"世界系(0,-100)"改为"体系(100,0)"；P1-P2-P3-P4-P5.5 回归全绿 → [教训：①用 vx/vy ratio 验证坐标系假设比代码走读可靠；②0x04 yaw 与 0x03 不一致会悄悄破坏 delta_yaw，加新 IMU 必须先验证一致性；③TelemetryBus"0x04 优先"无降级，建议未来加 source=="euler" 白名单；④速度死区 2cm/s 消除静止漂移不影响动态运动]
+
+
+---
+
+
+---
+
+
+---
+## GUI 路径可视化 — 大阶段全局计划锁定 (2026-05-27)
+
+[2026-05-27] [P1 顶部"功能"菜单 + 路径可视化 Dock 显隐 + 持久化] → [发现 ConfigService 用 `_DEFAULTS` 白名单过滤加载，未登记的 key 会被丢盘] → [新建 PathVisualizationPlaceholder Widget；main.py 加 `_FEATURE_DOCKS` 注册表 + `_build_feature_docks` + 功能菜单 + `_on_feature_toggled`；`_DEFAULTS` 增加 `features.path_visualization: False`；新写 `_smoke_phase_p1.py` 6 步验证全 OK] → [教训：用 ConfigService 持久化新键时必须先登记到 `_DEFAULTS`；GUI 测试中验证 Dock 显隐前必须先 `win.show()` + `processEvents()`。]
+
+---
+## GUI 路径可视化（旧 Phase 1 骨架完成 — 已作为 P3-P5 的起点保留）(2026-05-26)
+
+[2026-05-26] [在不影响原 GUI 的前提下启动路径可视化实现] → [原入口只处理 0xA0，缺少解耦遥测通道与功能门控] → [新增 `gui/services/telemetry_models.py`、`gui/services/telemetry_decoder.py`、`gui/services/path_tracker.py`、`gui/services/telemetry_bus.py`；MainWindow 旁路接入 TelemetryBus；新增 `gui/widgets/feature_bar.py` 功能下拉和 `gui/widgets/path_visualization_widget.py` 右侧 Dock 可视化面板（pyqtgraph 可用时 3D，缺依赖时自动降级）；仅在选中“路径可视化”时启用积分/渲染；参数可调并持久化到 config] → [教训：可视化必须“旁路接入+可停用零负担”，并保持 Ack/命令发送主链路零改动。
+
+验证：`gui/test/_smoke_phase_d.py` 与 `gui/test/_smoke_phase_e.py` 均 EXIT=0（无功能回归）。
+
+[2026-05-26] [路径可视化依赖已安装但 `pyqtgraph.opengl` 仍导入失败] → [缺少 OpenGL Python 绑定，`ModuleNotFoundError: OpenGL`] → [在 `gui/requirements.txt` 增加 `PyOpenGL>=3.1` 并安装，验证 `from pyqtgraph.opengl import GLViewWidget` 成功] → [教训：3D 组件依赖链要做“import 级”验收，不只看 pip 安装成功输出。]
+
+---
+[2026-05-27] [担心路径可视化需求在多轮开发中遗漏] → [需求仅分散在对话与代码中，缺少单一可勾选验收源] → [新增 `gui/requirements_lock_checklist.md`，逐条锁定 R1-R9（状态/验收标准/代码位置/每次改动必勾区），并在 `.github/copilot-instructions.md` 增加“开发前必读、完成后必勾选”约束] → [教训：阶段性大需求必须形成“单文档、可勾选、可追踪”的锁定清单，避免口头约束失真。]
+
+
+## GUI 接入 0xF3 — ✅ 真链路验证通过 (2026-05-26)
+
+[2026-05-26] GUI 端原本以 "F2 拆 3 帧串联" 实现三轴写入 → 固件已上 0xF3 原子帧 → 改用 0xF3 单帧：
+- `groundTest/ano_protocol.py` 新增 `build_f3_xyz(dest,x,y,z)`，`gui/io/protocol.py` 转出。
+- 新建 `gui/commands/cmd_f3.py`（CmdF3 + F3Panel），`cmd_id=0xF3` `requires_confirm=True` `ack_timeout_ms=1500`；回执正则 `^P\*=x,y,z[ CLP]
+# 开发日志 — 匿名凌霄室内四旋翼无人机
+
+> **规则（强约束）**：
+> 1. **每次开发会话开始前必须读取此文件**，了解当前进度和未解决问题。
+> 2. **每次解决问题后必须立即追加记录**，格式：`[日期] [问题] → [原因] → [解决方案] → [教训]`
+> 3. **每次完成一个功能后必须更新"当前进度"节**，标明已完成/进行中/待做。
+> 4. **思考和回答必须紧贴当前任务目标**，禁止偏离目标做无关扩展。
+> 5. 若本次修改涉及飞行安全，必须在记录中注明"⚠️ 安全影响"。
+
+
+。
+- `gui/commands/__init__.py` 增加 `from . import cmd_f3`。
+- `gui/commands/cmd_f2.py` 清掉三轴拆帧分支：删除内嵌 `_StableDoubleSpinBox`、`_PARAM_ID_TRIAXIAL=0xF0`、QStackedWidget、`_make_axis_sb` 等，仅保留单轴路径。
+- 抽出 `gui/widgets/stable_spinbox.py::StableDoubleSpinBox`（之前内嵌在 cmd_f2，现 F2/F3 共用）。
+- `gui/main.py` 移除残留的 `params.get("_skip_confirm")` 分支（拆帧机制下产物，已无意义）。
+- `gui/io/fake_worker.py` 新增 `_echo_f3` 分支：解析 12B 三 float，独立 ±500 限幅，回执 `P*=x,y,z[ CLP]`。
+- 教训：删除旧实现时要顺手清掉它在主窗口/Fake/REGISTRY 几处旁路；遗留的 `_skip_confirm` 之类 hook 不及时清会形成死代码地雷。
+- 自检：`from gui import commands` 后 REGISTRY 列出 `0xE1/0xE2/0xF1/0xF2/0xF3`；`build_f3_xyz(0xFF,30,44,55)` → 18B 帧（4B 帧头 + 12B float×3 + 2B 校验）。
+- **真机验证（COM11 实链路 4/4 通过）**：(20,10,0)/(30,20,0)/(30,20,20)/(30,20,40) cm，全部 INFO 级 `F3 OK：X=..,Y=..,Z=..`，无 CLP、无 TIMEOUT、无丢包。
+- **算长度教训**：F3 单帧总长 = 4(AA+dest+cmd+LEN) + 12(数据) + 2(SC AC) = **18B**，不是 15B；之前 send_xyz.py 描述里"15B 总长"是错的，但代码正确。
+
+---
+## 阶段 2b：0xF3 三轴同时写入帧 — ✅ 实现 (2026-05-26)
+
+需求：单帧原子写入 X+Y+Z，避免三条 0xF2 顺序帧的部分丢失风险。
+
+固件改动：
+- `FcSrc/Uplink_Cmd.h`：补充 0xF3 帧说明
+- `FcSrc/Uplink_Cmd.c`：
+  - 新增 `ECHO_KIND_PARAM3` 与 `s_last_p3_x/y/z` + `s_last_p3_clamped`
+  - `Uplink_Cmd_Dispatch` 新增 `cmd==0xF3` 分支：解析 12B（3×float LE），分别复用 `param_apply(PARAM_ID_GOAL_X/Y/Z, ...)` 写入并独立返回 clamp 标志，OR 后合并
+  - `Uplink_Cmd_Tick` 增加 PARAM3 回显分支："P*=30.0,44.0,55.0" 或末尾 " CLP"（绿色）
+- `FcSrc/ANO_DT_LX.c`：新增 `else if (*(data+2)==0xF3) → Uplink_Cmd_Dispatch`
+
+地面工具：
+- `groundTest/send_xyz.py`（新）：参数 `--x --y --z`，`struct.pack("<fff",...)` → `build_frame(dest, 0xF3, payload)`，15B 总长
+
+帧格式：
+```
+AA FF F3 0C | x(4B LE) | y(4B LE) | z(4B LE) | SC AC
+```
+
+与 0xF2 关系：并存，共用同一 RAM 槽与限幅（±500cm），生效时机一致（任务启动时拍照）。
+
+待硬件验证。
+
+---
+## 阶段 E（GUI）：扩展槽位 + UI 美化 — ✅ 烟测全绿 (2026-05-26)
+
+新增文件：
+- `gui/commands/cmd_placeholder.py`：占位命令模块。注册 0xE1「飞行控制（占位）」+ 0xE2「模式切换（占位）」；`build_frame` 抛 NotImplementedError；面板按钮永久禁用，独立状态行显示「固件未实现」。
+- `gui/services/theme_service.py`：内联 light/dark QSS 字符串 + `apply_theme(name)`，未识别名回落 dark。
+- `gui/_smoke_phase_e.py`：占位命令注册 / 主题切换 / MainWindow 含视图菜单含占位类别 三项检查全过。
+
+修改文件：
+- `gui/main.py`：
+  - 状态栏新增「最后接收 HH:MM:SS」label，每帧入站更新
+  - `_build_menu` 新增「视图」菜单：清屏日志 (Ctrl+L) / 暂停滚动 (checkable) / 主题 (暗色/浅色 QActionGroup 互斥)
+  - `main()` 启动时先用临时 ConfigService 读 `ui.theme` 并 apply，避免窗口构建一闪白底
+  - 主题切换持久化到 config.json
+- `gui/widgets/log_view.py`：公共 API `clear_display()` / `set_paused(bool)`，菜单可直接调
+- `gui/commands/__init__.py`：导入 cmd_placeholder
+- `gui/README.md`：从阶段 A 占位文档重写为完整使用手册 + "3 步加新命令"教程
+
+新增 memory：
+- `/memories/repo/gui-architecture.md`：GUI 三层分层、7 条关键设计决策、反模式 5 条
+
+阶段 D 烟测同步重跑：8/8 仍通过，无回归。
+
+关键决策：
+- 占位命令也走 REGISTRY（UI 一致性 > 特殊路径），cmd_id 用 0xE1/0xE2 避免与已知上行帧冲突
+- 主题用模块级 QSS 字符串内联，不引入资源文件或第三方主题包
+- 日志区**刻意保留暗背景**，无论切哪个主题（长时间盯屏护眼）
+- 视图菜单的"暂停滚动"勾选与 LogView 工具栏按钮通过 `set_paused` 双向同步
+
+
+---
+## 阶段 D（GUI）：F2 命令 + 二次确认 + 三态反馈 + 离线 FakeWorker — ✅ 烟测 8/8 通过 (2026-05-26)
+
+完成文件：
+- `gui/widgets/confirm_dialog.py`：强制勾选复选框才启用「发送」按钮的二次确认弹窗
+- `gui/commands/cmd_f2.py`：CmdF2（requires_confirm=True, ack_timeout=1500ms）+ F2Panel（ID 下拉 + ±600 DoubleSpinBox + 三态灯）
+- `gui/io/fake_worker.py`：离线仿真器，鸭子兼容 SerialWorker 接口；激活方式 `set LINGXIAO_GUI_FAKE=1 & python -m gui.main`
+- `gui/_smoke_phase_d.py`：8 项烟测（F2 注册/组帧/parse_ack 三分支/交叉不误匹配/FakeWorker F1+F2 UNK+CLP/MainWindow e2e）
+
+修改文件：
+- `groundTest/ano_protocol.py`：新增 `build_f2_param(dest, id, value)` 工具函数
+- `gui/io/protocol.py`：透传 build_f2_param
+- `gui/services/command_registry.py`：CommandPanelBase 增加 STATE_* 常量和 `set_ack_state(state, msg)` 接口
+- `gui/widgets/command_panel.py`：增加 `set_ack_state(cmd_id, state, msg)` 路由
+- `gui/commands/cmd_f1.py`：F1Panel 加状态灯 + 实装 set_ack_state（idle/waiting/ok/warn/fail/timeout 六态）
+- `gui/commands/__init__.py`：导入 cmd_f2
+- `gui/main.py`：confirm_send 替换 QMessageBox；ack_matched/timeout 联动面板三态；环境变量切 FakeWorker
+
+已知好串：
+- F2 (id=0x01, value=50.0) 帧 = `aafff20501000048422b85`（10 字节）
+
+关键决策：
+- 三态颜色：黄=#FBC02D 等待 / 绿=#2E7D32 OK / 橙=#EF6C00 WARN(CLP) / 红=#C62828 FAIL(UNK)/TIMEOUT / 灰=#888 IDLE
+- 二次确认强制勾选复选框才启用「发送」按钮，Cancel 设为默认焦点（回车默认取消）
+- FakeWorker 延迟 80ms 异步回执（接近真实固件限频 ECHO_MIN_TICK_GAP）
+- FakeWorker 与 MainWindow 解耦：通过 `LINGXIAO_GUI_FAKE=1` 环境变量切换，硬件场景零开销
+
+⏳ 待硬件验证：
+- F1/F2 真链路回执（用真飞控替换 FakeWorker）
+- 多 token FIFO 在真链路抖动下的表现
+- 二次确认弹窗在串口断开瞬间的边界
+
+---
+
+## 阶段1：上行指令链路打通（F1 灵活帧）— ✅ 已硬件验证通过
+
+- [2026-05-24] 新建 `FcSrc/Uplink_Cmd.h/.c`：Init / Tick(50Hz) / Dispatch / Send_Ack 骨架
+- `ANO_DT_LX.c` 解析末尾增 `else if 0xF1 → Uplink_Cmd_Dispatch`，其余分支零侵入
+- `Drv_BSP.c All_Init` 末尾追加 `Uplink_Cmd_Init`
+- `Ano_Scheduler.c Loop_50Hz` 追加 `Uplink_Cmd_Tick`
+- 阶段1 边界：仅解析 F1 前 4 字节 (S16 X, S16 Y) → 0xA0 绿色回显 `F1: X=.. Y=..`，限频 10Hz；ACK 函数写好但未挂载
+- 编译期开关：`UPLINK_CMD_EN`（默认1）
+
+**地面测试工具（groundTest/）**：
+- `ano_protocol.py`：帧构建/解析（FrameParser 状态机）
+- `win_serial.py`：**Win32 CreateFile 直接打开 COM**，绕过 SetCommState
+- `send_f1.py` / `monitor.py` / `list_ports.py`
+- 不依赖 pyserial（已知 pyserial 3.5 在 Python 3.14 + STM32 USB-CDC 上 SetCommState 报错31）
+
+**验证结果（2026-05-24）**：发 `AA FF F1 04 D2 04 2E EE 90 A1` (X=1234,Y=-4562) → 收到 `[RX 0xA0 GREEN] F1: X=1234 Y=-4562`。链路全通。
+
+**稳定性测试（2026-05-24）**：
+- 单帧：1/1 = 100%
+- 2 Hz × 30s：53/60 = **88%**（实用工作点）
+
+
+---
+## 阶段4：分轴飞行验证 + X+Y 联动测试（2026-05-24）
+
+### 4.1 遥控器手感优化（已验证）
+- `ANO_LX.c`：`MAX_VELOCITY` 100→**25 cm/s**（满杆=25，半杆≈12，更适合室内）
+- CH1/CH2 死区 40→**80**（消除粘杆抖动），补偿系数 0.00217→0.00238 保持线性
+- 油门 CH3 **不缩放**，沿用 MAX_VER_VEL_P=300 / MAX_VER_VEL_N=200
+- vx 方向最终需**取负**：`vel_x = -tmp_ch_dz[ch_1_rol] * 0.00238f * MAX_VELOCITY`（实测在定点模式下vx与摇杆反向，加负号才同向）
+
+### 4.2 拨杆触发架构
+| 通道 | 阈值 | 触发任务 | 默认目标 |
+|------|------|---------|---------|
+| CH5_AUX1 | 1200~1700 | 进入定点模式（PID任务前置条件） | - |
+| CH6 | >1700 && <2200 | **X+Y 联动**（axis_mode=4） | x=50, y=50 |
+| CH10_AUX6 | >1700 && <2200 | 仅 Y 轴（axis_mode=2） | y=50 |
+| CH7 | >1700 && <2200 | 仅 Z 轴 | z=变量 |
+- `pid_active_axis` 互斥状态机（0/1/2/3），多杆同时拨高会被拒绝并红字 LOG
+- 触发前置：必须 mode2，且 `RC_IDENTIFY_SAFE_MODE=0`
+
+### 4.3 `pid_3d_task` axis_mode 扩展
+位于 `User_Task.c::pid_3d_task(u8 *step, u8 axis_mode)`：
+```c
+const float goal_x = (axis_mode==0u || axis_mode==1u || axis_mode==4u) ? Uplink_GetGoalX_Cm() : 0.0f;
+const float goal_y = (axis_mode==0u || axis_mode==2u || axis_mode==4u) ? Uplink_GetGoalY_Cm() : 0.0f;
+const float goal_z = (axis_mode==0u || axis_mode==3u) ? Uplink_GetGoalZ_Cm() : 0.0f;
+```
+- 0=三轴 / 1=仅X / 2=仅Y / 3=仅Z / **4=X+Y（Z悬停）**
+- 合速度 `PID3D_VEL_TOTAL_CMPS=30` 限制：X+Y 同步满速时 vx=vy≈21cm/s（√2 缩放）
+
+### 4.4 关键调参（验证迭代记录）
+| 项目 | 初值 | 现值 | 原因 |
+|------|------|------|------|
+| `PID3D_SCALE_Y` | 0.90 | **1.30** | Y=50 任务实飞 75cm，超调 +25cm；scale 放大让 obs 更早达 goal、提前刹车 |
+| `PID3D_VY_XCOUPLE_GAIN` | -0.10 | **-0.17** | X=50 任务 Y 残漂 +5cm（初版 +12cm 用 -0.10 减到 +5），线性外推到 0 |
+| `PID3D_GOAL_Y_CM` | 0 | **50** | CH10 Y任务默认目标 |
+| `RC_IDENTIFY_SAFE_MODE` | 1 | **0** | =1 时函数早 return，所有触发失效；地面通道识别完毕必须改回 0 |
+
+### 4.5 已知物理现象（重要）
+- **Y 轴超调**：纯 Y 任务存在严重惯性超调（goal 50 → 实飞 75），说明 PID 减速段太短或电机响应滞后。靠 SCALE_Y 放大 obs 缓解，但根因未除（可考虑降 `PID3D_VEL_Y_CMPS=25` 或加 D 项）
+- **X→Y 串扰**：纯 X 飞行时 Y 正向漂移 ~12cm，开环补偿 `vy += vx * (-0.17)` 修正。物理来源推测为机架/电机不对称或重心偏移
+- **0x08 位置帧不可用于闭环**：静止时漂移 ~5cm，已确认 `PID3D_OBS_X/Y_MODE=2`（速度积分）作为唯一可用反馈源
+
+### 4.6 踩坑
+- [2026-05-24] CH6/CH10 单独拨高都不触发任务 → `RC_IDENTIFY_SAFE_MODE=1` 导致 `UserTask_OneKeyCmd` 早 return → 改回 0 → **教训：地面识别开关用完必关，否则所有 PID 任务静默失效**
+- [2026-05-24] vx 方向反复确认两次：之前因 ANO_LX.c 内部 `tmp_ch_dz` 计算用了 `ch-1500`（左推杆为负值），定点模式下 IMU 期望"右推=vx+"，需取负 → 教训：方向问题必须以实飞为准，代码注释要写明
+- [2026-05-24] dev.md 追加内容后全是乱码 → 该文件是 **GBK** 编码，但 PowerShell `Add-Content -Encoding UTF8` 写入 UTF-8（带 BOM）→ 用 Python `open(...,"wb")` + `.encode("gbk")` 重写 → **教训：本仓库所有遗留中文文件（含 .c/.h/dev.md）一律 GBK，追加禁用 `-Encoding UTF8`，应使用 `Out-File -Encoding Default` 或 `[Encoding]::GetEncoding(936)`**
+
+### 4.7 当前任务状态（2026-05-24 EOD）
+- ✅ CH6 已切到 axis_mode=4（X+Y 联动，目标 (50,50)），代码已编辑就绪、未上机
+- ✅ CH10 仍为 axis_mode=2（仅 Y=50）
+- ⏳ 待硬件验证：X+Y 同步飞行落点、Y 超调是否随 SCALE_Y=1.30 收敛、X→Y 串扰补偿 -0.17 在双轴模式下是否过量
+- 调参分支：Y 终点 ≥60 → SCALE_Y 提到 1.45；Y 终点 ~30 → VY_XCOUPLE_GAIN 退回 -0.08
+
+---
+## 阶段2：PID3D 目标坐标运行时覆盖（0xF2 帧）— ✅ 已硬件验证通过（2026-05-24）
+
+- **范围（用户钦定 A）**：只覆盖 `PID3D_GOAL_X/Y/Z_CM`；不动 PID 参数；不动 LOG_TEST/RC_DIAG。
+- **CMD 选 0xF2**：0xE2 已被凌霄 CK_Back 协议占用（ANO_DT_LX.c L334-345），私有空间 0xFx 安全。
+- **帧格式**：`AA FF F2 05 | id(1B) | float_LE(4B) | SC AC`，DATA=5B
+- **白名单 ID**：0x01=GOAL_X, 0x02=GOAL_Y, 0x03=GOAL_Z；其他红字 "P?? UNK"
+- **安全限幅**：±500 cm（飞控端 + Python 端双检），越界 clamp 并回 "CLP"
+- **生效时机**：任务启动时（PID3D step=1）通过 `Uplink_GetGoalX/Y/Z_Cm()` 拍照锁定为 const，飞行中不变。修改流程：落地 → 写参 → CH6 重启任务。
+- **回显**：成功绿 "P01=30.0"，限幅绿 "P01=500.0 CLP"，未知红 "P05 UNK"
+
+**修改清单**：
+- `Uplink_Cmd.h`：声明 3 个 Getter + 白名单 ID 宏 + `PARAM_GOAL_LIMIT_CM=500.0f` + `PARAM_WRITE_EN` 子开关
+- `Uplink_Cmd.c`：加 RAM 副本 `s_goal_x/y/z_cm`（Init 从宏取值）、`param_apply()`、`float_to_dec1()`、echo 队列扩展为 KIND_F1/KIND_PARAM 两种内容
+- `User_Task.c` L930-932：`PID3D_GOAL_X_CM` → `Uplink_GetGoalX_Cm()`（保持 `const float goal_x = ...`）；新加 `#include "Uplink_Cmd.h"`
+- `ANO_DT_LX.c`：F1 分支后追加 0xF2 同样分发到 `Uplink_Cmd_Dispatch`
+- `groundTest/send_param.py`：`--port --id --value --listen`，复用 Win32Serial / build_frame / FrameParser
+
+**Keil 工程**：未加新文件（继续用 Uplink_Cmd.c），无需改 .uvprojx。
+
+**硬件验证结果（2026-05-24）— 第1层 RAM 写入路径 5/5 通过**：
+| Case | 输入 | 实际回显 | 结论 |
+|---|---|---|---|
+| 1 | id=1 val=30 | `P01=30.0` 绿 ×4/5 | ✅ X 轴写入 |
+| 2 | id=2 val=-50 | `P02=-50.0` 绿 ×2/3 | ✅ Y 轴写入（含负值） |
+| 3 | id=3 val=80 | `P03=80.0` 绿 ×3/3 | ✅ Z 轴写入 |
+| 4 | id=1 val=800 | `P01=500.0 CLP` 绿 ×4/4 | ✅ 限幅生效 |
+| 5 | id=9 val=0 | `P09 UNK` 红 ×4/4 | ✅ 白名单拒绝 |
+
+最终写入 `GOAL_X=33, GOAL_Y=44, GOAL_Z=55`（双发确认，6/6 全部回显）。
+**第2层（Getter 拍照锁定到任务 step=1 INIT 日志）暂未现场触发** —— 当前没起飞条件；
+代码层面 `const float goal_x = Uplink_GetGoalX_Cm();` 是 1 行确定性 inline，无绕过路径。
+
+**实用工作点**：单帧偶发丢，重发 1-2 次必能命中（与阶段1 88% 通过率一致）。
+- 10 Hz × 30s：57/300 = **19%**（带宽饱和，被 IMU 持续上报帧挤压）
+- 结论：无线数传上行带宽是瓶颈，0xA0 echo 不要超 2Hz。阶段2/3 实际指令都 ≤2Hz，不受影响。
+
+### 关键踩坑记录
+
+- [2026-05-24] **pyserial 打不开匿名数传 COM11** → SetCommState 报 Win32 错误31 (ERROR_GEN_FAILURE) → 数传驱动固化波特率不接受标准 SetCommState → 用 ctypes CreateFile 直接打开（不调 SetCommState），驱动用内置波特率正常工作 → 教训：遇到驱动报错31先想"驱动是否拒绝改配置"，用 .NET SerialPort 也会复现同样问题，确认非 pyserial bug
+- [2026-05-24] groundTest 脚本输出帧太多终端吞掉输出 → 监听时 IMU 持续上报几百帧 → 重定向到文件再 grep；后续可加 `--filter 0xA0` 选项
+
+
+---
+## 阶段5：上行命令链路项目文档归档（2026-05-25）
+
+> 代码层面无新增，仅整理阶段1/2 的对外文档体系，方便交接和后续扩展。
+
+### 5.1 新建/更新文档
+
+| 文件 | 内容 |
+|------|------|
+| `数据帧.md`（新建） | 顶层数据帧规格汇总：通信链路图 + 0xF1/0xF2/0xA0 帧结构表 + 地址速记 + CMD 私有空间约定（0xFx 全留本项目，禁用 0xE2） |
+| `groundTest/README.md` | 加入「阶段2」章节：send_param.py 参数表、回显含义表、完整使用流程（CH6 回中 → 写参 → 触发任务 → 看 INIT 日志）、断电丢值⚠️、阶段2 专用故障排查 |
+| `dev.md`（项目根） | 末尾追加「阶段5：上行命令链路」章节：总体架构 ASCII 图、阶段1/2 规格表、地面工具列表、踩坑记录、后续扩展点（Layer2 启动回显 / PID 参数 id / Flash 持久化 / 参数读回） |
+
+### 5.2 私有 CMD 空间约定（落地到所有文档）
+
+| CMD | 用途 | 方向 |
+|-----|------|------|
+| `0xF1` | 链路验证灵活帧 | PC → 飞控 |
+| `0xF2` | 参数写入（白名单 0x01/0x02/0x03） | PC → 飞控 |
+| `0xF3`~`0xFF` | 预留 | — |
+
+**禁用 `0xE2`**：被凌霄 CK_Back 协议占用（`ANO_DT_LX.c L334-345`），会触发 ACK 冲突。CMD 选取前必须先在 `ANO_DT_LX.c` 全文搜对应 `0xXX` 字面量确认无冲突。
+
+### 5.3 后续扩展候选（未实施）
+
+- **Layer2 启动回显**：CH6 触发任务时发 `3D INIT gx:.. gy:.. gz:..`，让地面能在起飞前确认参数已生效（目前需间接通过 monitor 看任务自身的 INIT log）
+- **PID 参数 id**：扩 `0x04~0x08` 给 `KP/KI/KD/SCALE_*/VEL_LIMIT`，飞行中调参；需加 mode2/未起飞 守门避免飞行中突变
+- **Flash 持久化**：`0xF3 SAVE` / `0xF4 LOAD`，避免每次开机重新写参
+- **下行参数读回**：`0xF5 READ id` → 飞控回 `P01=30.0`，让 PC 主动查询当前 RAM 值
+
+
+---
+## 项目基本信息
+
+- **硬件**：STM32F407 + 凌霄IMU（闭源）+ 凌霄光流 + 凌霄数传
+- **IDE**：Keil5，烧录目标：STM32F407
+- **语言**：纯C（不是C++）
+- **用户入口**：`FcSrc/User_Task.c` → `UserTask_OneKeyCmd()`，50Hz调用
+
+---
+
+## 开发阶段记录
+
+### 阶段0：项目初始化与配置（2026-05-10）
+
+**完成的工作**：
+- 阅读了项目完整源码结构（main.c、ANO_DT_LX.c/h、ANO_LX.c/h、LX_FC_Fun.c/h、LX_FC_State.c/h、Ano_Scheduler.c、User_Task.c）
+- 建立了完整的 agent 配置系统：
+  - `.github/copilot-instructions.md`：全局开发指令
+  - `.github/instructions/lingxiao-protocol.instructions.md`：凌霄协议规则库
+  - `.github/instructions/keil5-stm32f407.instructions.md`：MCU开发规则
+  - `.github/instructions/drone-c-conventions.instructions.md`：C代码规范
+  - `/memories/repo/dev-log.md`：本开发日志
+  - `/memories/repo/project-structure.md`：项目模块结构
+  - `/memories/repo/architecture.md`：架构决策记录
+
+### 阶段0.5：手册审查与配置纠错（2026-05-10）
+
+**手册来源**：`数据手册/匿名通信协议V7.pdf` + `数据手册/匿名--凌霄--飞控手册.V1.07pdf.pdf`
+
+**发现的初始配置错误/遗漏**：
+- 协议文件缺少大量数据帧ID：`0x02`/`0x05`/`0x08`/`0x09`/`0x0A`/`0x0B`/`0x0C`/`0x0E`/`0x21`/`0x32`/`0x51`/`0xA0`/`0xA1`
+- 缺少硬件地址完整定义（0x22光流/0x30 UWB/0x10数传）
+- 0x34测距帧距离字段类型错误（协议规定U32，代码写了s32）
+- 缺少CMD类别A/B/C限制系统（B类不能在姿态模式用，C类只能程控模式）
+- 0x41有效性表完全缺失（各字段按飞行模式的响应规则）
+- 校验公式参考错误（应为 `len+4` 循环，不是 `len-2`）
+- AUX1模式映射遗漏（1200-1400和1600-1800是失控保护区间）
+- E0帧LEN=11未说明
+
+**已修复**：所有上述问题已在阶段0.5更新到配置文件中
+
+**待验证（须硬件测试确认）**：
+- `LX_FC_Fun.c` 中一键起飞使用 CID=0x01/CMD0=0x01/CMD1=0x02，但协议V7.15描述为 CID=0x10/CMD0=0x00/CMD1=0x05。代码可能基于早期协议版本，以源码为准，实际串口抓包验证
+
+**下一步计划**：
+- [ ] 深入阅读 `ANO_DT_LX.c` 发送部分完整实现
+- [ ] 深入阅读 `LX_FC_Fun.c` 所有功能函数实现
+- [ ] 制定阶段1开发计划（基础飞行控制验证）
+
+
+### 阶段0.6：0xA0字符串日志发送能力补齐（2026-05-15）
+
+**完成的工作**：
+- 在 `FcSrc/ANO_DT_LX.c/h` 增加 `String_Info_Send(u8 dest_addr, const char *str)`
+- 按匿名协议直接组 `0xA0` 字符串帧，通过现有 `UartSendLXIMU` 链路发送
+- 采用固定上限 `STRING_INFO_MAX_LEN=48`，超长字符串自动截断，避免动态内存
+- [2026-05-15] [需要验证匿名上位机0xA0字符串日志链路] → [原工程无User_Task侧独立A0测试任务，无法区分函数/协议/链路问题] → [在FcSrc/User_Task.c新增低频静态任务user_a0_log_test_task，每500ms通过String_Info_Send(SWJ_ADDR, "A0_LOG_TEST_n")发送ASCII日志；开关与周期宏放在User_Task.h，默认可直接上板验证]
+- [2026-05-15] [匿名上位机抓包里始终看不到0xA0文本帧] → [抓包中反复出现的“A0 8C”只是`AA AF 30 17 ...`这类帧的SC/AC校验尾字节，不是真正的`ID=0xA0`；同时0xA0日志作为“下位机发给上位机”的帧，目标地址应优先使用`0xAF`] → [将User_Task.h中的`USER_A0_LOG_TEST_DEST`从`HW_ALL`改为`SWJ_ADDR`，后续实机重新验证IMU桥接是否会放行0xA0]
+
+
+### 阶段0.8：0xA0 LOG 双路径验证成功（2026-05-15）
+
+**背景**：之前多轮调试始终在匿名上位机看不到 0xA0 日志，最终确认根因是**飞控断电重启问题**（见下方教训），与代码无关。
+
+**已验证可用的两种 LOG 发送方案**：
+
+#### 方案A：UART2 直连数传（推荐，最简单可靠）
+- **路径**：STM32 UART2 (PD5 TX) → UTI数传（空中端）→ 数传（地面端）→ USB → 匿名上位机
+- **波特率**：500000（`DrvUart2Init(500000)` 已在 `All_Init()` 中初始化，无需额外配置）
+- **关键函数**（位于 `FcSrc/User_Task.c`）：
+  ```c
+  static void Log_Send_Uart2(u8 color, const char *str)
+  // 直接构造 0xA0 帧调用 DrvUart2SendBuf()，绕过 IMU
+  ```
+- **优点**：不经过凌霄 IMU，不受 IMU 固件转发白名单限制，颜色显示正常（验证：绿色 `STRING_INFO_COLOR_GREEN=2`）
+- **缺点**：占用 UART2，需额外一组数传硬件连接
+
+#### 方案B：UART5 → 凌霄IMU → 数传（IMU自带链路）
+- **路径**：STM32 UART5 → 凌霄IMU → IMU内置数传 → 匿名上位机
+- **关键函数**（位于 `FcSrc/ANO_DT_LX.c`）：
+  ```c
+  void String_Info_Send(u8 dest_addr, u8 color, const char *str)
+  // 写入 s_log_color/s_log_str，设置 dt.fun[0xa0].WTS=1，由 Check_To_Send 调度发出
+  ```
+- **注意**：凌霄 IMU 固件**会转发** 0xA0 帧（已实机验证），颜色显示正常（验证：红色 `STRING_INFO_COLOR_RED=1`）
+- **目标地址**：使用 `0xFF`（广播），IMU 正常转发
+
+**协议格式**（两种方案均需遵守）：
+```
+0xAA | 0xFF | 0xA0 | LEN | COLOR(u8) | 字符串... | SC | AC
+```
+其中 `LEN = 1 + 字符串长度`（包含 COLOR 字节），`STRING_INFO_MAX_LEN` 设为 **43**（避免超出 `send_buffer[50]`）。
+
+---
+
+### 阶段0.7：agent 配置可靠性加固（2026-05-15）
+
+**完成的工作**：
+- 在 `.github/copilot-instructions.md` 新增“官方手册优先原则”，明确遇到不确定项必须先查工作区 `用户手册/` 下官方 PDF
+- 在 `.github/instructions/lingxiao-protocol.instructions.md` 新增同样的“官方手册优先原则”，并补入 `0xA0` 条目
+- [2026-05-15] [抓包持续看不到任何真实`ID=0xA0`帧] → [回查`用户手册/匿名通信协议V7.pdf`第10页后确认：0xA0 的 DATA 不是“纯字符串”，而是 `COLOR(u8)+STR`，且协议示例目标地址为 `0xFF`；此前测试代码少发了COLOR字节，并把目标地址改成了`0xAF`] → [已将 `String_Info_Send` 修正为 `dest_addr + color + str` 组帧，测试任务默认改回 `HW_ALL` + 黑色文本，等待重新烧录验证]
+
+- 通过读取 `用户手册/匿名通信协议V7.pdf` 确认：`0xA0` 官方定义为“LOG打印功能--字符串”，不是仅靠历史记忆补写
+- 在 `/memories/drone-lingxiao-rules.md` 固化“手册优先、memory/规则冲突时以官方手册为准”的行为规则
+
+**额外修正**：
+- 本工作区实际手册目录名为 `用户手册/`，后续记录统一使用该路径，不再写成 `数据手册/`
+
+
+**使用建议**：
+- 若希望经 `UTI -> 凌霄IMU -> 匿名上位机` 观察日志，优先使用上位机地址 `0xAF`
+- 建议从 `User_Task.c` 或用户状态机中按事件触发发送，避免在1ms任务里高频刷屏
+
+---
+
+## 问题与解决方案记录
+
+> 格式：[日期] [问题描述] → [原因] → [解决方案]
+
+- [2026-05-15] [烧录新代码后上位机始终看不到 0xA0 LOG，反复修改代码均无效] → [**飞控烧录后未断电重启**，STM32 没有复位，代码没有真正运行新版本，旧代码一直在跑] → [**烧录完成后必须手动断电重启飞控**，不能只靠调试器复位或软件复位；下次遇到"代码没问题但功能不生效"优先怀疑这个原因]
+
+---
+
+### 阶段1（代码架构）：三轴联合PID任务 pid_3d_task（2026-05-21）
+
+**完成的工作**：
+- `FcSrc/User_Task.h`：新增 PID3D_* 宏配置块（含目标坐标、各轴速度限制、合速度限制、各轴独立PID参数、观测比例、前置定高参数），默认 `PID3D_EN=0`（不编译）
+- `FcSrc/User_Task.c`：
+  - 添加 `#include "Ano_Math.h"`（合速度限幅用 `my_sqrt`）
+  - 新增 `s_3d_pid_x/y/z`、`s_3d_obs_x/y/z` 等 14 个文件作用域静态变量（`#if PID3D_EN` 包围）
+  - `pid_stop_output_now()` 扩展：增加三轴PID复位（`#if PID3D_EN` 包围）
+  - 新增 `pid_3d_task(u8 *step)` 函数（`#if PID3D_EN && #if PID_TEST_EN` 双层包围）
+  - `UserTask_OneKeyCmd()` CH6 触发段改为 `#if PID3D_EN` 条件切换：PID3D_EN=1 调用 `pid_3d_task`，PID3D_EN=0 继续调用原 `pid_ground_test_task`
+- **编译验证**：`PID3D_EN=0` 时 zero errors（Intellisense验证）
+
+**验收标准已达到**：
+- `PID3D_EN=0`：行为与修改前完全一致，不引入任何新代码
+- `PID3D_EN=1`：CH6>1700 触发三轴联合PID，含前置定高等待、合速度限制、到位确认
+
+---
+
+## 桌面 GUI 上位机项目（2026-05-25 启动）
+
+> 长期项目计划见 `/memories/session/plan.md`，跨天会话先读它。
+> 推进规则：**前一阶段未验收，不进入下一阶段**；用户未明说进入下一阶段时 AI 不擅自推进。
+
+### 阶段 A：项目骨架 — ✅ 已验收（2026-05-25）
+
+**已创建**：
+- `gui/__init__.py`、`gui/{io,services,widgets,commands}/__init__.py`（占位包）
+- `gui/requirements.txt`：PySide6
+- `gui/io/protocol.py`：薄壳 import `groundTest/ano_protocol.py`（sys.path 注入）
+- `gui/io/serial_worker.py`：QThread 包 `Win32Serial`，TX 队列槽 + RX 解析循环 + 信号上抛（connected/disconnected/error/frame_received/bytes_in/bytes_out）
+- `gui/main.py`：占位主窗口 1200x800，菜单"文件→退出"，状态栏；启动 SerialWorker 线程；closeEvent 干净退出
+- `gui/README.md`、`gui/_smoke_phase_a.py`（自测）
+
+**关键决策/踩坑**：
+- [2026-05-25] `create_file` 在 Windows 中文系统会以 **GBK** 编码写文件，最初统一加 `# -*- coding: utf-8 -*-` 导致 `SyntaxError: 'utf-8' codec can't decode byte 0xb0` → 改为 `# -*- coding: gbk -*-` 与 `groundTest/ano_protocol.py` 对齐 → 教训：本仓库所有新建含中文的 .py 一律用 `coding: gbk` 头
+- [2026-05-25] `pip install PySide6`（无前缀）装到了非工作环境的 Python，导致 `ModuleNotFoundError` → 用 `C:/Users/20399/.../Python313/python.exe -m pip install PySide6` 显式指定解释器 → 教训：本机 Python 多版本，安装命令必须用绝对路径解释器
+- 串口 IO 严格隔离设计：UI 线程 → `QMetaObject.invokeMethod(worker, "send_bytes", QueuedConnection)` → worker 线程串行执行，天然防 TX 冲突
+
+**验收**：
+- import 链 OK；`build_f1_xy(0xFF,1234,-4562)` 输出 `aafff104d2042eee90a1`，与 dev-log 阶段1 固化字节序完全一致
+- 自测脚本 `python -m gui._smoke_phase_a`：窗口弹出 → 2s 后自动关闭 → 进程返回 0、stderr 无 Traceback
+
+**待做（阶段 B 启动前由用户明确指令）**：
+- 串口连接栏 + 日志/报警基础设施 + 全局 excepthook + config.json 持久化
+
+---
+
+## GUI 桌面上位机 — 阶段 B：串口连接 + 日志/报警基础设施 — ✅ 已验收（2026-05-25）
+
+**新增文件**：
+- `gui/services/config_service.py`：JSON 持久化（last_port/window_size/window_pos/log_dir/log_filter_level）
+- `gui/services/log_service.py`：`LogLevel` 四级（DEBUG/INFO/WARN/ERROR）+ `LogEntry` + Qt 信号 `entry_added` + 文件写入（utf-8-sig，QMutex 保护）
+- `gui/services/alarm_service.py`：三级报警，ERROR 通过 `_request_error_dialog` 私有信号 + QueuedConnection 跨线程到主线程弹模态窗
+- `gui/io/serial_ports.py`：winreg 枚举 `SERIALCOMM`，**只读注册表不触碰驱动**，避免数传 SetCommState 误触发
+- `gui/widgets/connection_bar.py`：可编辑 QComboBox + 刷新 + 只读"波特率 500000" + 连接/断开二态按钮 + LED + 提示；记忆 last_port 写回 ConfigService
+- `gui/widgets/log_view.py`：QTextEdit + HTML 着色（按 LogLevel.color_hex）+ 工具栏（等级过滤/暂停滚动/清屏/导出）+ `_MAX_BLOCKS=5000` 行数裁剪
+- `gui/main.py`：**完整重写**，装配服务层 + 状态栏(RX/TX 计数 + 连接指示) + 菜单(导出日志/打开日志夹/关于) + 全局 `sys.excepthook` → AlarmService.error + closeEvent 持久化窗口几何
+- `gui/_smoke_phase_b.py`：自动化烟测脚本
+
+**关键设计决策**：
+- 选 **QTextEdit** 而非 QPlainTextEdit：要 HTML 着色；上位机日志 <10Hz 不需要极限性能；行数超 5000 自动裁剪头部
+- **红色 0xA0 (color=1) 默认归 WARN** 而非 ERROR：避免飞控 OF 提示等良性红字反复弹窗；命令层（如阶段 D 的 `UNK` 拒绝）可显式升级到 ERROR
+- ConnectionBar **不持有串口对象**，纯发 `connect_requested`/`disconnect_requested` 信号，由 MainWindow 用 `QMetaObject.invokeMethod(worker, "...", Qt.QueuedConnection, Q_ARG(str, port))` 跨线程派发
+- 弹窗必须跨线程：AlarmService 通过私有 Signal + QueuedConnection 把 `_show_error_dialog` 调用排到主线程，**杜绝在 SerialWorker 线程构造 QMessageBox 导致崩溃**
+- 全局异常钩子 `sys.excepthook`：未捕获异常 → stderr + AlarmService.error，**绝不静默崩溃**
+
+**验收（烟测自动化）**：
+1. 主窗口 1200×800 显示，三区布局（连接栏/命令面板占位/日志区）+ 状态栏
+2. 三级日志（DEBUG 被过滤 / INFO / WARN）按 HTML 着色显示
+3. 日志文件 `gui/logs/gui_20260525_234324.txt` 写入 781B（含 BOM 头），记事本可直接打开看中文
+4. ConfigService 持久化到 `gui/config.json`：last_port=COM_TEST、window_size=[1200,800]、window_pos=[254,80]
+5. 模拟 `_on_serial_connected("COM_TEST")` / `_on_serial_disconnected` 路径无异常，连接栏 LED 和状态栏同步更新
+6. ConnectionBar 端口枚举返回 0（虚拟机无 COM 口），不抛异常
+7. `python -m gui._smoke_phase_b` 返回 0、stderr 无 Traceback
+
+**问题与解决**：
+- [2026-05-25] [`create_file` 报"File already exists"on `gui/main.py`] → [阶段 A 已经创建过 main.py，需要覆盖式重写] → [先 `Remove-Item` 删旧文件再 `create_file`，不要试图用 replace_string_in_file 替换整个文件内容] → **教训：替换整文件直接 rm 再 create，比拼接 oldString 整段文本更可靠**
+- [2026-05-25] [初版烟测脚本用 `win._alarm._popup_on_error = False` 试图关闭弹窗] → [AlarmService 根本没有这个字段，弹窗禁用应用 `error(..., popup=False)` 关键字参数] → [改为不主动调用 `alarm.error`，避免触发弹窗] → **教训：写 stub 字段前先 grep 确认存在**
+
+---
+
+## GUI 桌面上位机 — 阶段 C：CommandRegistry + 0xF1 命令面板 — ✅ 已验收（2026-05-25）
+
+**新增文件**：
+- `gui/services/command_registry.py`：`Command` ABC（cmd_id/name/category/requires_confirm/ack_timeout_ms + build_frame/parse_ack/create_panel/describe_params）+ `AckResult` 冻结数据类 + `CommandPanelBase` Widget 基类 + 全局 `REGISTRY` 单例（register/get/all/categories/in_category）
+- `gui/services/ack_matcher.py`：`AckMatcher(QObject)`，`track(cmd, desc) → token` 用 QTimer 单次超时（`ack_timeout_ms` 决定，≤0 不计时），`handle_text(text)` 按 token 升序 FIFO 遍历挂起，首次 `parse_ack` 非 None 即 `ack_matched` 信号发出并结清；信号 `request_tracked/ack_matched/request_timeout`；`cancel/cancel_all/pending_count`
+- `gui/commands/cmd_f1.py`：`CmdF1`（cmd_id=0xF1, name="链路验证 F1"，requires_confirm=False, ack_timeout_ms=1500），build_frame 复用 `ano_protocol.build_f1_xy`，parse_ack 用 `^F1\s*:\s*X\s*=\s*(-?\d+)\s+Y\s*=\s*(-?\d+)` 正则，命中返回 `AckResult(ok=True, level=INFO, message=...)`；`F1Panel` 两 QSpinBox（-32768..32767，默认 1234/-4562）+ 发送 + 重发上次按钮 + 状态标签；`set_enabled_for_link(linked)` 控制按钮使能与状态色
+- `gui/commands/__init__.py`：仅 `from . import cmd_f1` 一行触发自注册；**新增命令只需在此 import 一行**
+- `gui/widgets/command_panel.py`：`CommandPanel` 两级 ComboBox（分类→命令）+ `QStackedWidget` 懒构造面板；面板 `send_requested` 转发为本控件的 `command_send_requested(int cmd_id, dict params)`；`set_enabled_for_link` 广播到所有已构造的子面板
+- `gui/main.py`：导入 `AckMatcher/REGISTRY/CommandPanel/gui.commands`；中央占位 QFrame 换成 `CommandPanel`，并创建 `self._ack = AckMatcher(self)`；`_on_serial_connected/disconnected/error` 联动 `set_enabled_for_link` 与 `_ack.cancel_all`；0xA0 入站路径调用 `self._ack.handle_text(text)`；新增三槽 `_on_command_send_requested/_on_ack_matched/_on_ack_timeout`，封装"敏感命令确认 → build_frame → AckMatcher 先登记后入队 send_bytes"流程
+- `gui/_smoke_phase_c.py`：自动化烟测 6 项
+
+**关键设计决策**：
+- **AckMatcher.track 先登记再发送**：避免极快回执先到导致漏匹配（即使是 USB-CDC 也可能在 1ms 内回 0xA0）
+- **每条 0xA0 文本只匹配一个挂起**：按 token 升序 FIFO，首中即结清，绝不跨命令乱抢
+- **不自动重发**（用户钦定规则）：超时只发 `request_timeout` 信号→ AlarmService.warn + 用户手动点"重发上次"
+- **扩展接入点收敛到 1 行**：新增命令 → 写 `gui/commands/cmd_xxx.py`（含 `REGISTRY.register(CmdXxx())`）+ 在 `gui/commands/__init__.py` 加 `from . import cmd_xxx`，UI 框架代码零修改
+- **CommandPanel 懒构造**：切到某命令首次才 `cmd.create_panel()`，避免启动时全量加载所有面板
+
+**烟测验证（python -m gui._smoke_phase_c, exit=0）**：
+1. REGISTRY 自注册 0xF1 成功
+2. `CmdF1.build_frame({"x":1234,"y":-4562}).hex() == "aafff104d2042eee90a1"`（与阶段1 固化字节序完全一致）
+3. parse_ack 正确识别 "F1: X=1234 Y=-4562"，正确拒绝 "P01=30.0"
+4. AckMatcher track + handle_text → ack_matched 触发，pending_count 归零
+5. F1Panel 在 link=False 时发送按钮禁用，link=True 时使能
+6. AckMatcher 短超时（200ms）+ QEventLoop 等待 400ms → request_timeout 触发
+
+**问题与解决**：
+- [2026-05-25] [烟测中创建独立 AckMatcher 实例 + QTimer 超时路径 → `STATUS_STACK_BUFFER_OVERRUN (0xC0000409)`] → [PySide6 中临时 AckMatcher 与 lambda slot 在事件循环中的生命周期问题；非产品 bug，但测试代码不稳] → [测试中复用 `win._ack`，不再创建新 AckMatcher 实例] → **教训：QObject 子类含 QTimer 的实例不要在临时函数局部短期持有；测试中复用主窗口的实例即可**
+- [2026-05-25] [`replace_string_in_file` 误把 `_on_menu_export` 方法体清空导致 SyntaxError] → [想分两步重构，第一步删除旧体，第二步插入新体，但被 token 限制中断] → [一次性 replace 同时包含旧 + 新内容，不要拆步] → **教训：方法重构必须单次 atomic replace，不留空函数体中间态**
+
+**待做（阶段 D 启动前由用户明确指令）**：
+- `gui/commands/cmd_f2.py`：参数写入命令（敏感，requires_confirm=True），三态回执（OK/CLP/UNK）颜色映射到日志
+
+---
+
+## 当前总进度（2026-05-25）
+
+| 功能 | 状态 | 备注 |
+|------|------|------|
+| 0xA0 LOG 发送能力 | ✅ 完成 | UART2直连和UART5→IMU两路均验证 |
+| X轴PID任务（CH6触发） | ✅ 完成 | 含前置定高阶段，已实飞验证 |
+| Y轴PID任务（CH10触发） | ✅ 完成 | 已实飞，收敛 |
+| Z轴PID任务（CH7触发） | ✅ 完成 | 代码实现，待充分实飞验证 |
+| 遥控全通道识别（RC诊断） | ✅ 完成 | RC_DIAG_ALL_CHANNELS，10通道 |
+| RC override 防干扰 | ✅ 完成 | PID任务激活期间屏蔽RC速度覆写 |
+| 油门冲突修复（X/Y vs Z） | ✅ 完成 | xy_active固定thr=500，z_active不固定 |
+| 多轴防同时触发告警 | ✅ 完成 | pid_multi_axis_warned单次告警 |
+| 观测比例分轴标定 | ✅ 完成 | PID_OBS_VX_SCALE_X/Y/Z独立 |
+| 波形分析Python脚本 | ✅ 完成 | wave/analyze_wave.py，8个分析模块 |
+| notch滤波配置 | ❌ 未做 | 频谱检测到19.3Hz主峰，需飞控参数配置 |
+| Y轴KD调参（超调59%） | ⏳ 待飞 | 待下次实飞验证减KP/增KD效果 |
+
+---
+
+### 阶段1：X/Y/Z 轴解耦 PID 位移任务（2026-05-18 ~ 05-20）
+
+**功能说明**：
+- X轴任务：CH6>1700 触发，Pitch 方向推进，目标 50cm
+- Y轴任务：CH10>1700 触发，Roll 方向推进，目标 50cm
+- Z轴任务：CH7>1700 触发，垂直速度控制，目标 50cm
+- 三轴完全解耦，不可同时触发（告警）
+
+**参数（User_Task.h）**：
+- `PID_TARGET_X/Y/Z_CM = 50.0f`
+- `PID_OBS_VX_SCALE_X/Y = 0.90f`，`Z = 1.00f`
+- `kp=1.10, ki=0.0043, kd=0.03, vel_limit=25cm/s`
+
+**问题与解决**：
+- [2026-05-18] [Y轴响应极慢，log无vel_y输出] → [ANO_LX.c的RC_Data_Task()在100Hz循环中每帧覆写vel_y=0（非程控模式下的清零逻辑）] → [在RC_Data_Task()中扩展pid_task_xy_active判断至三个触发通道，PID激活期间跳过RC速度覆写] → **教训：RC 100Hz覆写优先级高于User 50Hz写入，任何速度指令冲突必须先检查ANO_LX.c的RC任务**
+- [2026-05-18] [Z轴任务与X/Y任务共用xy_active，起飞时油门错误固定] → [Z轴PID只需屏蔽RC vel覆写，不需要固定thr=500（Z轴自己控制throttle）] → [拆分为pid_task_xy_active和pid_task_z_active，各自处理逻辑分离] → **教训：XY保高和Z控高机制完全不同，必须拆开**
+- [2026-05-18] [日志频繁出现"PID seq: release all switches"误告警] → [该保护逻辑原意是检查多轴同时触发，但逻辑写错导致每次都触发] → [移除序列保护逻辑，仅保留多轴同时检测（pid_multi_axis_warned单次告警）] → **教训：安全逻辑必须在地面充分仿真，不能只靠逻辑推理**
+- [2026-05-19] [实飞X轴仅移动约30cm，日志显示50cm，误差极大] → [速度积分观测比例scale=1.55偏高，真实积分距离比飞控估算小] → [公式：scale_new=scale_old×(D_real/m_done)，实测30cm/51cm≈0.59，scale_new≈1.55×0.59≈0.91，设为0.90] → **教训：上线前必须用卷尺标定观测比例，不能直接信任飞控积分**
+
+---
+
+### 阶段2：全通道遥控诊断（RC Diagnostic）（2026-05-19）
+
+**功能**：`rc_diag_task()` 检测 CH1~CH10 变化，超阈值打印日志
+**开关**：`RC_IDENTIFY_SAFE_MODE=1` 时禁止一切任务动作，仅输出诊断
+**日志格式**：`CH7_AUX3:1988 -> aux3`
+
+---
+
+### 阶段3：波形自动分析工具（2026-05-20）
+
+**文件**：`wave/analyze_wave.py`
+**功能模块**（8个）：
+1. basic：总览/姿态/IMU/高度图
+2. vibration：ACC RMS振动评分
+3. fft：Welch PSD频谱 + notch建议
+4. spectrogram：STFT时频图
+5. distribution：直方图 + 3σ
+6. pid_response：阶跃响应自动检测（rise/OS/settle）
+7. coupling：Pearson 轴间耦合
+8. anomaly：突变/卡死/离群事件
+
+**实飞波形分析结论（2026-05-20）**：
+- X任务：19.3Hz 电机振动极强（ACC_Y PSD能量比中位高206×）→ 需加notch@19Hz
+- Y任务：振动RMS=126（X任务52），主频6.7Hz，说明两次飞行油门/转速差异大
+- Y任务ROL超调59.2% → 减KP或增KD
+- X/Y轴ROL~PIT耦合0.488（Y任务） → 检查重心对称性
+- 脚本已知问题：小幅值阶跃（<1°）被误判为超调，需加`abs(amp)<1.0`过滤
+
+---
+
+## 已验证的关键知识点
+
+### 协议相关
+- 帧头固定`0xAA`，目标地址`0xFF`（广播），本机地址`HW_TYPE=0x61`
+- SC/AC校验范围：从`0xAA`帧头到DATA区结束（不含校验字节本身）
+- CMD发送前必须检查`dt.wait_ck == 0`，否则会丢失前一个CMD的确认
+- 程控模式`fc_sta.fc_mode_sta == 3`才能响应`0x41`实时控制帧
+
+### 调度器相关
+- 裸机时分调度，无RTOS
+- UserTask在50Hz（Loop_50Hz），周期20ms
+- 状态变量用`static`修饰，保持跨调用状态
+
+### 已知的坑
+- `ANO_DT_LX.c`中`0x03`（欧拉角）和`0x04`（四元数）的`else if`条件原本**写错了**（两个都是`0x03`），导致四元数数据永远不会被解析——**已于2026-05-15修复**，四元数分支已改为 `0x04`

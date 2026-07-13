@@ -1,0 +1,287 @@
+{
+  "last_port": "/dev/ttyACM0",
+  "window_size": [
+    1222,
+    736
+  ],
+  "window_pos": [
+    58,
+    27
+  ],
+  "log_dir": "",
+  "log_filter_level": "INFO",
+  "features.path_visualization": false,
+  "features.path_visualization_xy": false,
+  "features.path_visualization_xz": false,
+  "features.path_visualization_yz": false,
+  "path_viz.settings": {
+    "axis": {
+      "head_length_cm": 2.5,
+      "head_radius_cm": 0.0,
+      "label_offset_cm": 2.5,
+      "label_size": 14,
+      "labels_visible": true,
+      "length_cm": 8.0,
+      "visible": true
+    },
+    "cube": {
+      "color": [
+        255,
+        78,
+        8,
+        191
+      ],
+      "draw_edges": false,
+      "edge_color": [
+        255,
+        255,
+        255,
+        255
+      ],
+      "size_cm": 9.0
+    },
+    "grid": {
+      "color": [
+        180,
+        180,
+        200,
+        80
+      ],
+      "plane_xy": true,
+      "plane_xz": false,
+      "plane_yz": true,
+      "size_cm": 300.0,
+      "step_cm": 10.0
+    },
+    "hud": {
+      "items": {
+        "h": {
+          "fmt": "{:+7.1f}",
+          "label": "H",
+          "unit": "cm",
+          "visible": true
+        },
+        "pitch": {
+          "fmt": "{:+6.1f}",
+          "label": "pitch",
+          "unit": "°",
+          "visible": true
+        },
+        "roll": {
+          "fmt": "{:+6.1f}",
+          "label": "roll",
+          "unit": "°",
+          "visible": true
+        },
+        "vmag": {
+          "fmt": "{:7.1f}",
+          "label": "|v|",
+          "unit": "cm/s",
+          "visible": false
+        },
+        "vx": {
+          "fmt": "{:+7.1f}",
+          "label": "vx",
+          "unit": "cm/s",
+          "visible": true
+        },
+        "vy": {
+          "fmt": "{:+7.1f}",
+          "label": "vy",
+          "unit": "cm/s",
+          "visible": true
+        },
+        "vz": {
+          "fmt": "{:+7.1f}",
+          "label": "vz",
+          "unit": "cm/s",
+          "visible": true
+        },
+        "x": {
+          "fmt": "{:+7.1f}",
+          "label": "X",
+          "unit": "cm",
+          "visible": true
+        },
+        "y": {
+          "fmt": "{:+7.1f}",
+          "label": "Y",
+          "unit": "cm",
+          "visible": true
+        },
+        "yaw": {
+          "fmt": "{:+6.1f}",
+          "label": "yaw",
+          "unit": "°",
+          "visible": true
+        },
+        "z": {
+          "fmt": "{:+7.1f}",
+          "label": "Z",
+          "unit": "cm",
+          "visible": true
+        }
+      },
+      "overlay": {
+        "bg_color": [
+          214,
+          214,
+          214,
+          180
+        ],
+        "fg_color": [
+          235,
+          235,
+          235,
+          255
+        ],
+        "font_size_pt": 11,
+        "opacity": 1.0,
+        "pos_x": 25,
+        "pos_y": 9,
+        "visible": true
+      },
+      "ruler": {
+        "color": [
+          120,
+          160,
+          200,
+          200
+        ],
+        "enabled": true,
+        "text_color": [
+          200,
+          220,
+          240,
+          255
+        ],
+        "tick_cm_major": 100,
+        "tick_cm_minor": 50
+      }
+    },
+    "nose": {
+      "color": [
+        255,
+        217,
+        51,
+        255
+      ],
+      "gap_cm": 2.5,
+      "radius_cm": 1.5
+    },
+    "path": {
+      "antialias": true,
+      "color": [
+        51,
+        255,
+        102,
+        255
+      ],
+      "fade": true,
+      "head_alpha": 255,
+      "head_width": 3.0,
+      "k_segments": 8,
+      "max_points": 1800,
+      "render_mode": "segmented",
+      "tail_alpha": 40,
+      "tail_width": 1.0,
+      "trail_seconds": 30.0,
+      "width": 2.0
+    },
+    "render": {
+      "antialias": true,
+      "bg_color": [
+        40,
+        40,
+        50,
+        255
+      ],
+      "camera_azimuth": 0.0,
+      "camera_distance": 600.0,
+      "camera_elevation": 89.0,
+      "fps": 60
+    },
+    "vel_arrow": {
+      "color": [
+        255,
+        140,
+        25,
+        255
+      ],
+      "head_length_cm": 3.5,
+      "head_radius_cm": 1.5,
+      "max_cm": 130.0,
+      "min_speed_cmps": 4.5,
+      "scale_cm_per_cmps": 0.45,
+      "width": 2.0
+    }
+  },
+  "path_viz_2d.xy.settings": {
+    "grid": {
+      "color": [
+        180,
+        180,
+        200,
+        80
+      ],
+      "step_cm": 50.0,
+      "visible": true
+    },
+    "icon": {
+      "color": [
+        255,
+        217,
+        51,
+        255
+      ],
+      "heading_source": "yaw",
+      "length_cm": 5.0,
+      "outline_color": [
+        40,
+        40,
+        50,
+        255
+      ],
+      "outline_width": 1.5,
+      "width_cm": 3.0
+    },
+    "path": {
+      "antialias": true,
+      "color": [
+        51,
+        255,
+        102,
+        255
+      ],
+      "head_alpha": 255,
+      "head_width": 3.0,
+      "k_segments": 8,
+      "render_mode": "segmented",
+      "tail_alpha": 40,
+      "tail_width": 1.0,
+      "width": 3.0
+    },
+    "view": {
+      "auto_range": false,
+      "bg_color": [
+        40,
+        40,
+        50,
+        255
+      ],
+      "fixed_range_cm": 300.0,
+      "show_axis_labels": true
+    }
+  },
+  "path_viz_2d.xz.settings": {},
+  "path_viz_2d.yz.settings": {},
+  "ui.main_window_state": "AAAA/wAAAAD9AAAAAgAAAAEAAAHIAAACqvwCAAAABfwAAAAbAAACqgAAAAAA////+v////8BAAAAAvsAAABCAEYAZQBhAHQAdQByAGUARABvAGMAawBfAHAAYQB0AGgAXwB2AGkAcwB1AGEAbABpAHoAYQB0AGkAbwBuAF8AeAB5AAAAAAD/////AAAAlgD////7AAAAPABGAGUAYQB0AHUAcgBlAEQAbwBjAGsAXwBwAGEAdABoAF8AdgBpAHMAdQBhAGwAaQB6AGEAdABpAG8AbgAAAAL7AAADsAAAAFAA////+wAAAEIARgBlAGEAdAB1AHIAZQBEAG8AYwBrAF8AcABhAHQAaABfAHYAaQBzAHUAYQBsAGkAegBhAHQAaQBvAG4AXwB4AHoIAAAAIQAAA64AAAB1AP////sAAABCAEYAZQBhAHQAdQByAGUARABvAGMAawBfAHAAYQB0AGgAXwB2AGkAcwB1AGEAbABpAHoAYQB0AGkAbwBuAF8AeQB6AAAAAAD/////AAAAdQD////7AAAAIABOAHUAbQBlAHIAaQBjAFAAYQBuAGUAbABEAG8AYwBrCAAAABsAAAKqAAABsgD////7AAAAHABGAGwAaQBnAGgAdABEAGEAdABhAEQAbwBjAGsAAAAAGwAAAqoAAAIxAP///wAAAAMAAATGAAABDfwBAAAAAfsAAAAgAEYAcgBhAG0AZQBNAG8AbgBpAHQAbwByAEQAbwBjAGsCAAAAOgAAAfgAAATGAAABDQAABMYAAAKqAAAABAAAAAQAAAAIAAAACPwAAAAA",
+  "path_viz.hud.settings": {},
+  "features.numeric_panel": false,
+  "features.flight_data": false,
+  "features.frame_monitor": false,
+  "splitter_sizes": [
+    241,
+    387
+  ]
+}

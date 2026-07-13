@@ -1,0 +1,26 @@
+=== acc ===
+  FC_ACC_X:
+      19.34 Hz   PSD=3.202e+02
+      19.14 Hz   PSD=2.965e+02
+      35.35 Hz   PSD=7.114e+01
+  FC_ACC_Y:
+      19.34 Hz   PSD=1.870e+02
+      19.14 Hz   PSD=1.763e+02
+      35.35 Hz   PSD=3.889e+01
+  FC_ACC_Z:
+       1.37 Hz   PSD=7.081e+02
+       1.56 Hz   PSD=5.680e+02
+       1.17 Hz   PSD=4.650e+02
+=== gyr ===
+  FC_GYR_X:
+      19.34 Hz   PSD=4.300e+03
+      19.14 Hz   PSD=4.099e+03
+       9.77 Hz   PSD=2.357e+03
+  FC_GYR_Y:
+       1.37 Hz   PSD=1.054e+03
+       1.56 Hz   PSD=8.891e+02
+       2.15 Hz   PSD=6.084e+02
+  FC_GYR_Z:
+      11.52 Hz   PSD=2.540e+02
+       9.77 Hz   PSD=2.313e+02
+      11.33 Hz   PSD=1.836e+02

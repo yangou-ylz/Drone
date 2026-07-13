@@ -1,0 +1,110 @@
+{
+  "file": "D:\\原E盘\\桌面\\无人机\\凌霄\\5.飞控MCU源码工程\\ANO_LX_FC\\ANO_LX_FC\\wave\\y的pid任务波形1.csv",
+  "active": [
+    30.295,
+    34.335
+  ],
+  "metrics": {
+    "alt_drift_cm": 0.33999999999999986,
+    "FC_ATT_ROL_peak": 2.41,
+    "FC_ATT_ROL_std": 0.31506553736255916,
+    "FC_ATT_PIT_peak": 3.56,
+    "FC_ATT_PIT_std": 0.7367343964620143,
+    "FC_ATT_YAW_peak": 94.12,
+    "FC_ATT_YAW_std": 0.19949949597355773,
+    "FC_ACC_X_std": 104.07758232409556,
+    "FC_ACC_X_rms": 108.19261311548257,
+    "FC_ACC_Y_std": 112.17298424251892,
+    "FC_ACC_Y_rms": 122.68247175189498,
+    "FC_ACC_Z_std": 161.66274943913604,
+    "FC_ACC_Z_rms": 1383.9393961309015,
+    "FC_GYR_X_std": 94.7055520469939,
+    "FC_GYR_X_rms": 94.70589436612964,
+    "FC_GYR_Y_std": 111.00381381542284,
+    "FC_GYR_Y_rms": 111.0158231018732,
+    "FC_GYR_Z_std": 37.217790174131636,
+    "FC_GYR_Z_rms": 37.27268972395665,
+    "active_dur_s": 4.039999999999999,
+    "vib_acc_rms_avg": 125.97110533525017,
+    "FC_ATT_ROL_outlier_3s_pct": 3.7082818294190356,
+    "FC_ATT_PIT_outlier_3s_pct": 4.944375772558715,
+    "FC_ATT_YAW_outlier_3s_pct": 2.3485784919653896,
+    "FC_ACC_X_outlier_3s_pct": 3.584672435105068,
+    "FC_ACC_Y_outlier_3s_pct": 3.584672435105068,
+    "FC_ACC_Z_outlier_3s_pct": 1.3597033374536465,
+    "FC_GYR_X_outlier_3s_pct": 2.843016069221261,
+    "FC_GYR_Y_outlier_3s_pct": 2.1013597033374536,
+    "FC_GYR_Z_outlier_3s_pct": 2.966625463535229
+  },
+  "pid_response": {
+    "FC_ATT_ROL": {
+      "step_amp": 0.7444955257270689,
+      "rise_s": 0.014999999999997016,
+      "peak_t_s": 0.03999999999999915,
+      "overshoot_pct": 59.19056941399901,
+      "settle_s": 0.9349999999999952,
+      "ss_err": -0.013504474272930948
+    },
+    "FC_ATT_PIT": {
+      "step_amp": 2.5863814432989702,
+      "rise_s": 0.02499999999999858,
+      "peak_t_s": 0.07499999999999929,
+      "overshoot_pct": 23.8667511695545,
+      "settle_s": 0.4599999999999973,
+      "ss_err": 0.0035481099656347083
+    },
+    "FC_ATT_YAW": {
+      "step_amp": 0.13426373626373334,
+      "rise_s": 0.0,
+      "peak_t_s": 0.045000000000001705,
+      "overshoot_pct": 84.71108201016703,
+      "settle_s": 1.8799999999999955,
+      "ss_err": -0.0022362637362853093
+    },
+    "FC_ALT_FU": {
+      "step_amp": -0.21551984126984114,
+      "rise_s": 0.5,
+      "peak_t_s": 3.4350000000000023,
+      "overshoot_pct": 6.1773857966157975,
+      "settle_s": NaN,
+      "ss_err": 0.0061468253968254725
+    }
+  },
+  "coupling": {
+    "FC_ATT_ROL~FC_ATT_PIT": 0.4877939382643032,
+    "FC_GYR_X~FC_GYR_Y": -0.06591048844297943,
+    "FC_ACC_X~FC_ACC_Y": -0.07245058250135648
+  },
+  "drift": {
+    "FC_GYR_X": {
+      "bias": -0.7856666666666666,
+      "noise_std": 81.1717627086059
+    },
+    "FC_GYR_Y": {
+      "bias": -0.0175,
+      "noise_std": 34.38961365126589
+    },
+    "FC_GYR_Z": {
+      "bias": -1.6905,
+      "noise_std": 23.29402018580448
+    },
+    "alt_static_drift_per_s": 0.04029982767499523
+  },
+  "warnings": [
+    "FC_GYR_X 峰值 426 > 200.0",
+    "FC_GYR_Y 峰值 635 > 200.0",
+    "FC_GYR_Z 峰值 213 > 200.0",
+    "FC_ACC_X 频谱主峰 6.7Hz 能量/中位 343.9x, 建议 notch",
+    "FC_ACC_Y 频谱主峰 6.7Hz 能量/中位 2653.7x, 建议 notch",
+    "FC_ACC_Z 频谱主峰 9.9Hz 能量/中位 156.5x, 建议 notch",
+    "FC_GYR_X 频谱主峰 6.2Hz 能量/中位 422.6x, 建议 notch",
+    "FC_GYR_Y 频谱主峰 1.5Hz 能量/中位 1017.0x, 建议 notch",
+    "FC_GYR_Z 频谱主峰 3.2Hz 能量/中位 531.4x, 建议 notch",
+    "FC_ATT_YAW 出现 68 点连续不变, 可能卡死"
+  ],
+  "tips": [
+    "FC_ATT_ROL 超调 59.2% 偏大, 建议减小 Kp 或增大 Kd",
+    "FC_ATT_YAW 超调 84.7% 偏大, 建议减小 Kp 或增大 Kd"
+  ],
+  "n_anomaly": 37
+}

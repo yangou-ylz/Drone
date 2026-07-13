@@ -1,0 +1,94 @@
+# ------------------------------------------------------------
+# OS / Editor / local workspace
+# ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+.agents/
+
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------
+# Python local environment / cache
+# ------------------------------------------------------------
+.venv/
+.venv-linux/
+venv/
+env/
+
+__pycache__/
+*.py[cod]
+*.pyo
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ------------------------------------------------------------
+# Logs / local runtime outputs
+# ------------------------------------------------------------
+logs/*.log
+gui/logs/*.txt
+
+out.txt
+groundTest/out.txt
+extracted_text.txt
+
+# ------------------------------------------------------------
+# CMake / Ninja / GCC build outputs
+# ------------------------------------------------------------
+build-gcc/
+cmake-build-*/
+
+CMakeCache.txt
+CMakeFiles/
+build.ninja
+.ninja_deps
+.ninja_log
+cmake_install.cmake
+compile_commands.json
+
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.obj
+*.d
+*.su
+*.lst
+*.axf
+
+# ------------------------------------------------------------
+# Keil / J-Link generated local files
+# Keep *.uvprojx / *.uvoptx / linker scripts / source lists.
+# ------------------------------------------------------------
+ProjectSTM32F407/*.uvguix.*
+ProjectMSP432/*.uvguix.*
+ProjectTM4C123/*.uvguix.*
+
+ProjectSTM32F407/build/
+ProjectSTM32F407/DebugConfig/
+ProjectMSP432/Objects/
+ProjectMSP432/Listings/
+ProjectTM4C123/build/
+ProjectTM4C123/DebugConfig/
+
+ProjectSTM32F407/JLinkLog*.txt
+ProjectSTM32F407/JLinkSettings.ini
+ProjectMSP432/JLinkLog*.txt
+ProjectMSP432/JLinkSettings.ini
+ProjectTM4C123/JLinkLog*.txt
+ProjectTM4C123/JLinkSettings.ini
+
+# ------------------------------------------------------------
+# Optional local test / temporary artifacts
+# Keep gui/data/*.jsonl and other checked-in samples because they are
+# useful for analysis and verification on a fresh clone.
+# ------------------------------------------------------------
+*.tmp
+*.temp

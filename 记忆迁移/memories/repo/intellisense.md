@@ -1,0 +1,2 @@
+- .vscode/c_cpp_properties.json mirrors Keil uvprojx settings with separate configurations for STM32F407, MSP432P401, and TM4C123.
+- STM32F407 IntelliSense requires USE_STDPERIPH_DRIVER and USE_USB_OTG_FS plus include paths for CMSIS and STM32F4xx_StdPeriph_Driver/inc.
