@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._connection_bar)
+        # 注：连接栏已提到最外层顶部常驻（见下方 _outer 容器），主页面内部不再放置连接栏。
 
         # 命令面板 / 日志区 用 QSplitter 可拖拽分隔调整高度
         # 鼠标靠近分割条会变十字光标，按住上下拖动即可
@@ -161,7 +161,17 @@ class MainWindow(QMainWindow):
         self._central_stack.addWidget(central)
         self._imu_test_window = None
         self._imu_data_hub = None
-        self.setCentralWidget(self._central_stack)
+
+        # ---- 顶层容器：连接栏常驻顶部 + 下方可切换的中心 stack ----
+        # 把连接栏从主页面内部提到最外层，使其跨所有功能页（IMU测试台/数据帧监视等）常驻可见，
+        # 无需切回主页即可随时连接/断开串口。连接栏本身排版样式保持不变，仅改变挂载位置。
+        _outer = QWidget(self)
+        _outer_lay = QVBoxLayout(_outer)
+        _outer_lay.setContentsMargins(0, 0, 0, 0)
+        _outer_lay.setSpacing(0)
+        _outer_lay.addWidget(self._connection_bar)
+        _outer_lay.addWidget(self._central_stack, 1)
+        self.setCentralWidget(_outer)
 
         # ---- AckMatcher（必须在主线程，方便 QTimer）----
         self._ack = AckMatcher(self)

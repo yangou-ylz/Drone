@@ -1,0 +1,14 @@
+{
+  "cmake.configureOnOpen": true,
+  "cmake.buildDirectory": "${workspaceFolder}/build-gcc",
+  "cmake.generator": "Ninja",
+  "cmake.configureArgs": [
+    "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/cmake/arm-none-eabi-gcc.cmake",
+    "-DCMAKE_BUILD_TYPE=Debug"
+  ],
+  "cmake.environment": {
+    "PATH": "/opt/gcc-arm-none-eabi-9-2020-q2-update/bin:${env:PATH}"
+  },
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+}
+

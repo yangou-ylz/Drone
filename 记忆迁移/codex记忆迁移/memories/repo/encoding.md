@@ -1,0 +1,2 @@
+- Legacy Keil-exported source files in this repo are encoded as GBK/CP936; VS Code should use files.encoding=gbk to display Chinese comments correctly.
+- **dev.md is also GBK** (not UTF-8). When appending Chinese content via PowerShell, use `-Encoding ([System.Text.Encoding]::GetEncoding(936))` or `Out-File -Encoding Default`, NOT `-Encoding UTF8` (will produce garbled mojibake).

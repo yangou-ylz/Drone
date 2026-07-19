@@ -34,7 +34,9 @@ from gui.imu_test.widgets.device_calibration_panel import DeviceCalibrationPanel
 from gui.imu_test.widgets.frame_rate_panel import FrameRatePanel
 from gui.imu_test.widgets.imu_chart_panel import ImuChartPanel
 from gui.imu_test.widgets.imu_value_panel import ImuValuePanel
+from gui.imu_test.widgets.position_test_panel import PositionTestPanel
 from gui.imu_test.widgets.quality_report_panel import QualityReportPanel
+from gui.imu_test.widgets.velocity_test_panel import VelocityTestPanel
 from gui.imu_test.widgets.yaw_test_panel import YawTestPanel
 
 # Tab 定义：(内部键, 显示标题)。顺序即页签顺序。
@@ -44,6 +46,8 @@ _TABS = (
     ("yaw", "Yaw跟随"),
     ("roll", "Roll跟随"),
     ("pitch", "Pitch跟随"),
+    ("velocity", "线速度观测"),
+    ("position", "位置测试"),
     ("calibration", "静态校准"),
     ("device_cal", "设备校准"),
     ("quality", "质量报告"),
@@ -88,9 +92,11 @@ class ImuTestWindow(QWidget):
         self._value_panel = ImuValuePanel(self)
         self._attitude_panel = Attitude3DPanel(self)
         self._chart_panel = ImuChartPanel(self)
-        self._yaw_panel = YawTestPanel(self, axis="yaw")
-        self._roll_panel = YawTestPanel(self, axis="roll")
+        self._yaw_panel   = YawTestPanel(self, axis="yaw")
+        self._roll_panel  = YawTestPanel(self, axis="roll")
         self._pitch_panel = YawTestPanel(self, axis="pitch")
+        self._vel_panel   = VelocityTestPanel(self)
+        self._pos_panel   = PositionTestPanel(self)
         self._calibration_panel = CalibrationPanel(data_hub, self)
         self._device_cal_panel = DeviceCalibrationPanel(send_frame_fn, self)
         self._quality_panel = QualityReportPanel(data_hub, self)
@@ -126,6 +132,12 @@ class ImuTestWindow(QWidget):
             self._hub.attitude.connect(self._roll_panel.on_attitude)
             self._hub.attitude.connect(self._pitch_panel.on_attitude)
             self._hub.attitude.connect(self._quality_panel.on_attitude)
+            self._hub.velocity.connect(self._value_panel.on_velocity)
+            self._hub.velocity.connect(self._vel_panel.on_velocity)
+            self._hub.velocity.connect(self._pos_panel.on_velocity)
+            self._hub.imu_raw.connect(self._pos_panel.on_imu_raw)
+            self._hub.position.connect(self._pos_panel.on_position)
+            self._hub.gen_velocity.connect(self._pos_panel.on_gen_velocity)
             self._hub.quat_norm.connect(self._quality_panel.on_quat_norm)
             self._hub.log_text.connect(self._device_cal_panel.on_log_text)
             self._log.info("IMU 测试台已接入 DataHub")
@@ -158,6 +170,10 @@ class ImuTestWindow(QWidget):
             return self._roll_panel
         if key == "pitch":
             return self._pitch_panel
+        if key == "velocity":
+            return self._vel_panel
+        if key == "position":
+            return self._pos_panel
         if key == "calibration":
             return self._calibration_panel
         if key == "device_cal":

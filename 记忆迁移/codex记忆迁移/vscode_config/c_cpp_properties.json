@@ -1,0 +1,106 @@
+{
+  "configurations": [
+    {
+      "name": "windows-gcc-x64",
+      "defines": [
+        "USE_STDPERIPH_DRIVER",
+        "USE_USB_OTG_FS"
+      ],
+      "includePath": [
+        "${workspaceFolder}/**"
+      ],
+      "compilerPath": "D:/mingw64/bin/gcc.exe",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "windows-gcc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}/FcSrc",
+          "${workspaceFolder}/DriversBsp",
+          "${workspaceFolder}/DriversMcu/STM32F407",
+          "${workspaceFolder}/DriversMcu/STM32F407/Drivers",
+          "${workspaceFolder}/DriversMcu/STM32F407/Libraries/CMSIS/Include",
+          "${workspaceFolder}/DriversMcu/STM32F407/Libraries/CMSIS/ST/STM32F4xx/Include",
+          "${workspaceFolder}/DriversMcu/STM32F407/Libraries/STM32F4xx_StdPeriph_Driver/inc",
+          "${workspaceFolder}/ProjectSTM32F407/build"
+        ],
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "compilerArgs": [
+        ""
+      ]
+    },
+    {
+      "name": "MSP432P401",
+      "defines": [
+        "__MSP432P401R__"
+      ],
+      "includePath": [
+        "${workspaceFolder}/FcSrc",
+        "${workspaceFolder}/DriversBsp",
+        "${workspaceFolder}/DriversMcu/MSP432P401",
+        "${workspaceFolder}/DriversMcu/MSP432P401/Drivers",
+        "${workspaceFolder}/DriversMcu/MSP432P401/Libraries",
+        "${workspaceFolder}/DriversMcu/MSP432P401/Libraries/Include"
+      ],
+      "compilerPath": "D:/mingw64/bin/gcc.exe",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "windows-gcc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}/FcSrc",
+          "${workspaceFolder}/DriversBsp",
+          "${workspaceFolder}/DriversMcu/MSP432P401",
+          "${workspaceFolder}/DriversMcu/MSP432P401/Drivers",
+          "${workspaceFolder}/DriversMcu/MSP432P401/Libraries",
+          "${workspaceFolder}/DriversMcu/MSP432P401/Libraries/Include"
+        ],
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "compilerArgs": [
+        ""
+      ]
+    },
+    {
+      "name": "TM4C123",
+      "defines": [
+        "TARGET_IS_TM4C123_RB1",
+        "PART_TM4C123GH6PM"
+      ],
+      "includePath": [
+        "${workspaceFolder}/FcSrc",
+        "${workspaceFolder}/DriversBsp",
+        "${workspaceFolder}/DriversMcu/TM4C123",
+        "${workspaceFolder}/DriversMcu/TM4C123/Drivers",
+        "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc",
+        "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc/driver_hw",
+        "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc/driver_inc",
+        "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc/driver_usb",
+        "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc/driver_usb/device"
+      ],
+      "compilerPath": "D:/mingw64/bin/gcc.exe",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "windows-gcc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}/FcSrc",
+          "${workspaceFolder}/DriversBsp",
+          "${workspaceFolder}/DriversMcu/TM4C123",
+          "${workspaceFolder}/DriversMcu/TM4C123/Drivers",
+          "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc",
+          "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc/driver_hw",
+          "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc/driver_inc",
+          "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc/driver_usb",
+          "${workspaceFolder}/DriversMcu/TM4C123/Libraries/inc/driver_usb/device"
+        ],
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "compilerArgs": [
+        ""
+      ]
+    }
+  ],
+  "version": 4
+}

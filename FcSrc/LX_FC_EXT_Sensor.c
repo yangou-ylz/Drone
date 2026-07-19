@@ -24,7 +24,7 @@ _fc_ext_sensor_st ext_sens;
 //这里把光流数据打包成通用速度传感器数据
 static inline void General_Velocity_Data_Handle()
 {
-	static u8 of_update_cnt, of_alt_update_cnt;
+	static u8 of_update_cnt;
 	static u8 dT_ms = 0;
 	//每一毫秒dT_ms+1，用来判断是否长时间无数据
 	if (dT_ms != 255)
@@ -46,12 +46,8 @@ static inline void General_Velocity_Data_Handle()
 			ext_sens.gen_vel.st_data.hca_velocity_cmps[0] = 0x8000;
 			ext_sens.gen_vel.st_data.hca_velocity_cmps[1] = 0x8000;
 		}
-	}
-	if (of_alt_update_cnt != ano_of.alt_update_cnt)
-	{
-		//
-		of_alt_update_cnt = ano_of.alt_update_cnt;
-		//不输入z轴速度，将z速度赋值为无效
+		//不输入z轴速度，将z速度赋值为无效。
+		//0x33 是光流速度帧，应跟随光流速度更新触发发送，不能依赖测距高度更新。
 		ext_sens.gen_vel.st_data.hca_velocity_cmps[2] = 0x8000;
 		//触发发送
 		dt.fun[0x33].WTS = 1;

@@ -22,6 +22,7 @@ try:
     import math
 
     import numpy as np
+    from pyqtgraph import Transform3D
     from pyqtgraph.opengl import (
         GLAxisItem,
         GLGridItem,
@@ -211,18 +212,25 @@ class Attitude3DPanel(QWidget):
     def _apply_attitude(self, item, roll: float, pitch: float, yaw: float) -> None:
         """按 ZYX 顺序把姿态应用到 GL item。
 
-        yaw 取负：IMU 输出的偏航角在 pyqtgraph 的 CCW-正约定 + 默认斜视相机下
-        视觉方向相反（实机右转会显示成左转），渲染端取负即可对齐。
+        使用 Transform3D（后乘）保证旋转合成正确：
+        T = Rz(−yaw) · Ry(pitch) · Rx(roll)
+
+        符号约定（与路径可视化一致）：
+        - yaw 取负：IMU NED 顺时针正，pyqtgraph CCW 正，渲染端取负对齐
+        - pitch / roll 保持原符号：0x04 四元数已转 NWU，
+          正 roll = 右横滚（左翼上扬），正 pitch = 抬头，与 pyqtgraph 方向一致
         """
-        item.resetTransform()
-        item.rotate(-yaw, 0, 0, 1)
-        item.rotate(pitch, 0, 1, 0)
-        item.rotate(roll, 1, 0, 0)
+        m = Transform3D()
+        m.rotate(-yaw,  0, 0, 1)
+        m.rotate(pitch, 0, 1, 0)
+        m.rotate(roll,  1, 0, 0)
+        item.setTransform(m)
 
     def _rotation_matrix(self, roll: float, pitch: float, yaw: float):
-        """返回与 _apply_attitude 一致的旋转矩阵 M = Rz(-yaw)·Ry(pitch)·Rx(roll)。
+        """返回与 _apply_attitude 一致的旋转矩阵 M = Rz(−yaw)·Ry(pitch)·Rx(roll)。
 
         用于把机体系轴向量映射到世界系，给三根轴标签定位。
+        符号与 _apply_attitude 完全一致：yaw 取负，pitch/roll 保持原符号。
         """
         r = math.radians(roll)
         p = math.radians(pitch)

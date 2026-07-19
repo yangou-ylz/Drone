@@ -26,11 +26,18 @@ from typing import Optional
 from PySide6.QtCore import QObject, Signal, Slot
 
 from gui.imu_test.logger import get_logger
-from gui.services.telemetry_decoder import decode_attitude_quat
+from gui.services.telemetry_decoder import (
+    decode_attitude_quat,
+    decode_gen_position,
+    decode_gen_velocity,
+    decode_velocity,
+)
 
-# ---- 标定默认值（与 gui/imu测试要求.md 一致；校准面板可覆盖）----
-DEFAULT_ACC_SCALE = 0.004788   # LSB → m/s²（±16g 量程）
-DEFAULT_GYR_SCALE = 0.001065   # LSB → rad/s（±2000dps 量程）
+# ---- 标定默认值（实测校准；校准面板可覆盖）----
+# 加速度标定：frame_monitor 真机静止实测 Az=1363.4 LSB ≈ 1g（2026-07-17）
+# 说明：协议手册标称 ±16g（1g=2048 LSB）不准，固件实配约 ±24g 量程
+DEFAULT_ACC_SCALE = 9.80665 / 1363.4   # LSB → m/s²（实测 1g=1363.4 LSB）
+DEFAULT_GYR_SCALE = 0.001065           # LSB → rad/s（±2000dps 量程，暂未实测校准）
 
 # 0x01 帧解包：acc_x/y/z, gyr_x/y/z (s16) + shock(u8)，小端
 _FMT_0x01 = "<hhhhhhB"
@@ -39,6 +46,9 @@ _LEN_0x01 = struct.calcsize(_FMT_0x01)  # 13
 # 帧 ID 常量
 CMD_IMU_RAW = 0x01
 CMD_ATT_QUAT = 0x04
+CMD_VEL     = 0x07   # 0x07 飞控融合速度（机体系，cm/s）
+CMD_GEN_POS = 0x32   # 0x32 通用位置型传感器帧（光流/激光等外部观测位置，cm）
+CMD_GEN_VEL = 0x33   # 0x33 光流原始速度（机体系，cm/s，S16×3）
 CMD_LOG_STR = 0xA0
 
 
@@ -64,6 +74,9 @@ class ImuDataHub(QObject):
     # ---- 对外信号 ----
     imu_raw = Signal(object)          # ImuRawSample（0x01）
     attitude = Signal(object)         # AttitudeSample（0x04→欧拉）
+    velocity = Signal(object)         # VelocitySample（0x07 飞控融合速度）
+    position = Signal(object)         # GenPositionSample（0x32 通用外部位置，供位置测试"直接转发"算法）
+    gen_velocity = Signal(object)     # GenVelocitySample（0x33 光流原始速度）
     quat_norm = Signal(float)         # 0x04 原始四元数模长（质量检查用，理想≈1）
     frame_seen = Signal(int, float)   # (cmd, ts) 每收到一帧有效数据都发，供帧率统计
     log_text = Signal(int, str)       # 0xA0 字符串帧 (color, text)，供设备校准终端显示
@@ -128,6 +141,21 @@ class ImuDataHub(QObject):
                     self.frame_seen.emit(cmd, ts)
                     self.attitude.emit(att)
                     self._emit_quat_norm(data)
+            elif cmd == CMD_VEL:
+                vel = decode_velocity(data, ts)
+                if vel is not None:
+                    self.frame_seen.emit(cmd, ts)
+                    self.velocity.emit(vel)
+            elif cmd == CMD_GEN_POS:
+                pos = decode_gen_position(data, ts)
+                if pos is not None:
+                    self.frame_seen.emit(cmd, ts)
+                    self.position.emit(pos)
+            elif cmd == CMD_GEN_VEL:
+                gvel = decode_gen_velocity(data, ts)
+                if gvel is not None:
+                    self.frame_seen.emit(cmd, ts)
+                    self.gen_velocity.emit(gvel)
             elif cmd == CMD_LOG_STR:
                 self.frame_seen.emit(cmd, ts)
                 self._emit_log_text(frame, data)

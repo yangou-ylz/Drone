@@ -41,6 +41,10 @@ _ROWS = (
     ("pitch", "俯仰 Pitch", "°"),
     ("yaw", "偏航 Yaw", "°"),
     ("shock", "震动标志", ""),
+    # 三轴线速度（0x07 速度帧，cm/s）
+    ("vx", "速度 Vx", "cm/s"),
+    ("vy", "速度 Vy", "cm/s"),
+    ("vz", "速度 Vz", "cm/s"),
 )
 
 _COL_TEXT = QColor("#DCDCDC")
@@ -58,6 +62,7 @@ class ImuValuePanel(QWidget):
         self._log = get_logger()
         self._last_raw = None       # 最新 ImuRawSample
         self._last_att = None       # 最新 AttitudeSample
+        self._last_vel = None       # 最新 VelocitySample（0x07）
         self._row_index = {key: i for i, (key, _n, _u) in enumerate(_ROWS)}
 
         lay = QVBoxLayout(self)
@@ -114,9 +119,14 @@ class ImuValuePanel(QWidget):
     def on_attitude(self, sample: object) -> None:
         self._last_att = sample
 
+    @Slot(object)
+    def on_velocity(self, sample: object) -> None:
+        self._last_vel = sample
+
     def clear(self) -> None:
         self._last_raw = None
         self._last_att = None
+        self._last_vel = None
         for key, _n, _u in _ROWS:
             r = self._row_index[key]
             self._table.item(r, 1).setText("--")
@@ -147,3 +157,8 @@ class ImuValuePanel(QWidget):
             self._set("roll", f"{a.roll_deg:+.2f}", "")
             self._set("pitch", f"{a.pitch_deg:+.2f}", "")
             self._set("yaw", f"{a.yaw_deg:+.2f}", "")
+        v = self._last_vel
+        if v is not None:
+            self._set("vx", f"{v.vx_cmps:+.1f}", "")
+            self._set("vy", f"{v.vy_cmps:+.1f}", "")
+            self._set("vz", f"{v.vz_cmps:+.1f}", "")

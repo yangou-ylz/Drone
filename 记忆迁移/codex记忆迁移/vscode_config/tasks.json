@@ -1,0 +1,97 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "STM32: Configure",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-S",
+        ".",
+        "-B",
+        "build-gcc",
+        "-G",
+        "Ninja",
+        "-DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi-gcc.cmake",
+        "-DCMAKE_BUILD_TYPE=Debug"
+      ],
+      "options": {
+        "env": {
+          "PATH": "/opt/gcc-arm-none-eabi-9-2020-q2-update/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "STM32: Build",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "build-gcc",
+        "--parallel"
+      ],
+      "options": {
+        "env": {
+          "PATH": "/opt/gcc-arm-none-eabi-9-2020-q2-update/bin:${env:PATH}"
+        }
+      },
+      "dependsOn": "STM32: Configure",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "STM32: Verify Local Environment",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/verify-local-env.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "STM32: Check DAP USB",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/check-dap.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "STM32: Probe DAP Connection",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/probe-dap.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "STM32: Probe DAP Low Speed No SRST",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/probe-dap-low-speed.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "STM32: Diagnose DAP",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/diagnose-dap.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "STM32: Suggest DAP udev Rule",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/suggest-udev-rule.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "STM32: Flash with DAP",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/flash-dap.sh",
+      "dependsOn": "STM32: Build",
+      "problemMatcher": []
+    },
+    {
+      "label": "STM32: Flash with DAP Low Speed No SRST",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/flash-dap-low-speed.sh",
+      "dependsOn": "STM32: Build",
+      "problemMatcher": []
+    }
+  ]
+}

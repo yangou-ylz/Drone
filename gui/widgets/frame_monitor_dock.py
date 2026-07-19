@@ -50,9 +50,14 @@ _SUMMARY_IDLE_QSS = "color: #666; font-family: Consolas,'Courier New',monospace;
 _DOT_FRESH_SEC = 0.8    # 活动灯保持绿色的时长
 _UI_REFRESH_MS = 66     # 面板 UI 刷新周期（~15Hz），与数据速率解耦
 
-# IMU 量纲换算（凌霄默认量程：加速度 ±16g，角速度 ±2000 dps）
-_ACC_LSB_TO_MS2 = 16.0 * 9.80665 / 32768.0   # ≈ 0.004788 m/s² 每 LSB
-_ACC_LSB_TO_G = 16.0 / 32768.0               # ≈ 0.000488 g 每 LSB
+# IMU 量纲换算
+# 加速度：实测标定。静止平放时三轴合成模值应=1g，实测原始合成模值稳定在
+# 1363 LSB（多次会话一致）。协议文档未给出加速度量程/分辨率定义，故此处
+# 采用实测标定系数，而不是按 ±16g 假设；用 ±16g(0.000488) 会让静止读数偏
+# 低约 33%（0.67g 而非 1.0g）。
+_ACC_LSB_PER_G = 1363.4                       # 实测：1g 对应的原始 LSB
+_ACC_LSB_TO_G = 1.0 / _ACC_LSB_PER_G          # ≈ 0.000733 g 每 LSB
+_ACC_LSB_TO_MS2 = 9.80665 / _ACC_LSB_PER_G    # ≈ 0.007193 m/s² 每 LSB
 _GYR_LSB_TO_DPS = 2000.0 / 32768.0           # ≈ 0.06104 °/s 每 LSB
 
 
@@ -237,12 +242,16 @@ def _fmt_mag_baro(data: bytes) -> tuple[str, str]:
     if len(data) != struct.calcsize(fmt):
         return _fmt_raw(data)
     mx, my, mz, alt_bar, tmp, bar_sta, mag_sta = struct.unpack(fmt, data)
-    s = f"Mx={mx}  My={my}  Mz={mz}  气压高={alt_bar}cm  温={tmp / 10:.1f}℃"
+    # 温度：协议文档标注 ×10(0.1℃)，但实测原始值 4880 按此算是 488℃（离谱）。
+    # 实测按 ×100(0.01℃) → 48.8℃，与温热的 IMU 芯片相符，故采用 /100。
+    # 气压高度 ALT_BAR：绝对气压高度（以海平面标准气压为基准），静止实测≈129m，
+    # 等于本地海拔，并非离地相对高度（离地相对高度见 0x05 融合高度帧）。
+    s = f"Mx={mx}  My={my}  Mz={mz}  气压海拔={alt_bar/100:.1f}m  温={tmp / 100:.1f}℃"
     d = (f"  罗盘 Mx:   {mx}\n"
          f"  罗盘 My:   {my}\n"
          f"  罗盘 Mz:   {mz}\n"
-         f"  气压高度:  {alt_bar} cm\n"
-         f"  温度:      {tmp / 10:.1f} ℃ (×0.1)\n"
+         f"  气压海拔:  {alt_bar} cm = {alt_bar/100:.2f} m (绝对/海平面基准)\n"
+         f"  温度:      {tmp / 100:.1f} ℃ (×0.01)\n"
          f"  气压状态:  {bar_sta}\n"
          f"  罗盘状态:  {mag_sta}")
     return s, d
