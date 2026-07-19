@@ -15,11 +15,12 @@
 1. `AGENTS.md`
 2. `记忆迁移/codex记忆迁移/CODEX_MEMORY_INDEX.md`
 3. `记忆迁移/codex记忆迁移/CODEX_FOUNDATION.md`
-4. `记忆迁移/codex记忆迁移/review.md`
-5. `记忆迁移/codex记忆迁移/memories/user/drone-lingxiao-rules.md`
-6. `记忆迁移/codex记忆迁移/memories/repo/dev-log.md`
-7. `记忆迁移/codex记忆迁移/memories/repo/project-structure.md`
-8. `记忆迁移/codex记忆迁移/memories/repo/architecture.md`
+4. `记忆迁移/codex记忆迁移/CODEX_GIT_BACKUP_RULES.md`
+5. `记忆迁移/codex记忆迁移/review.md`
+6. `记忆迁移/codex记忆迁移/memories/user/drone-lingxiao-rules.md`
+7. `记忆迁移/codex记忆迁移/memories/repo/dev-log.md`
+8. `记忆迁移/codex记忆迁移/memories/repo/project-structure.md`
+9. `记忆迁移/codex记忆迁移/memories/repo/architecture.md`
 
 ## 3. 判断任务类型
 
@@ -37,9 +38,10 @@
 2. 读取 `CODEX_MEMORY_INDEX.md` 对应分组，加载专项文档和 drone skill。
 3. 查 `dev-log.md` 中相关历史坑，避免重复方案。
 4. 先用 `CODEX_FOUNDATION.md` 判断 STM32/凌霄 IMU/数传的数据所有权，不能把 IMU 闭源输出误判为 STM32 可直接控制。
-5. 定位现有源码/文档的真实实现，再决定修改点。
-6. 修改后做最小充分验证：C 编译、GUI smoke/截图、协议帧校验或文档关键词扫描。
-7. 若解决问题或纠正旧记忆，按 `CODEX_UPDATE_RULES.md` 立即追加记录。
+5. 先用 `CODEX_GIT_BACKUP_RULES.md` 判断是否需要备份；禁止执行任何 Git/项目历史回滚命令，回滚必须由用户亲手做。
+6. 定位现有源码/文档的真实实现，再决定修改点。
+7. 修改后做最小充分验证：C 编译、GUI smoke/截图、协议帧校验或文档关键词扫描。
+8. 若解决问题或纠正旧记忆，按 `CODEX_UPDATE_RULES.md` 立即追加记录。
 
 ## 4. 回答前说明上下文
 

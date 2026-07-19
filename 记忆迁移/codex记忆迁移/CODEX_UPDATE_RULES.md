@@ -33,6 +33,13 @@
 2. 在 dev-log 中记录旧结论、错误原因、新依据。
 3. 再修改对应记忆文件。
 
+## Git 回滚与备份
+
+- Git 历史和项目历史回滚必须由用户亲手执行；Codex 不得运行 `git reset`、`git restore`、`git checkout --`、`git revert`、`git clean` 等回滚/清理命令。
+- 如果需要撤销 Codex 自己造成的普通错误，优先通过再次编辑做“前进式修复”，不要用 Git 回滚。
+- 大范围、多文件、高风险飞控/协议/GUI修改前，必要时先在 `记忆迁移/codex记忆迁移/backups/YYYYMMDD-HHMMSS/` 保存源码差异补丁和关键文件副本。
+- 备份后仍必须更新 `dev-log.md`；备份不是进度记录的替代品。
+
 ## 新增 Codex 记忆
 
 - 新增文件必须命名为 `CODEX_*.md` 或放在明确属于本项目的目录下。

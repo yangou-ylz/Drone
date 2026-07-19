@@ -9,10 +9,11 @@
 1. `AGENTS.md`
 2. `记忆迁移/codex记忆迁移/review.md`
 3. `记忆迁移/codex记忆迁移/CODEX_FOUNDATION.md`
-4. `记忆迁移/codex记忆迁移/memories/user/drone-lingxiao-rules.md`
-5. `记忆迁移/codex记忆迁移/memories/repo/dev-log.md`
-6. `记忆迁移/codex记忆迁移/memories/repo/project-structure.md`
-7. `记忆迁移/codex记忆迁移/memories/repo/architecture.md`
+4. `记忆迁移/codex记忆迁移/CODEX_GIT_BACKUP_RULES.md`
+5. `记忆迁移/codex记忆迁移/memories/user/drone-lingxiao-rules.md`
+6. `记忆迁移/codex记忆迁移/memories/repo/dev-log.md`
+7. `记忆迁移/codex记忆迁移/memories/repo/project-structure.md`
+8. `记忆迁移/codex记忆迁移/memories/repo/architecture.md`
 
 ## 完整继承审计
 
@@ -117,6 +118,14 @@ GUI 关键运行/验证记忆：
 - 涉及飞行安全，记录安全影响。
 - 新增运行、烧录、GUI使用步骤时，同步更新相关 `project_docs/` 或 GUI 文档。
 - 发现旧记忆错误时，记录旧结论为何错、新结论依据是什么。
+- Git/项目历史回滚必须由用户亲手执行；Codex 只能说明风险和建议步骤，不能运行回滚命令。
+- 大范围、高风险或多文件开发必要时先备份源码/补丁到 `记忆迁移/codex记忆迁移/backups/`，再继续修改。
+
+## Git 与备份安全
+
+- 详细规则见 `记忆迁移/codex记忆迁移/CODEX_GIT_BACKUP_RULES.md`。
+- 禁止 Codex 执行 `git reset`、`git restore`、`git checkout --`、`git revert`、`git clean` 等回滚/清理历史命令。
+- 用户误回滚或工作区变化后，先重新读取当前文件状态；不要擅自恢复被用户回滚的内容。
 
 ## 禁止导入
 

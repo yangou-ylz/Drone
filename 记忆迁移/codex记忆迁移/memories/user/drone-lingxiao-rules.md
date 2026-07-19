@@ -47,6 +47,9 @@
 9. **Win32 串口未设 COMMTIMEOUTS** → 默认 ReadFile 阻塞等数据，工作线程卡死，UI 投递的 close_port 槽永远不执行（"点断开没反应"）。修复：open() 后调 SetCommTimeouts(ReadIntervalTimeout=MAXDWORD)
 10. **QThread worker 主循环忘记 `QCoreApplication.processEvents()`** → 通过 `QueuedConnection` 投递的槽（open_port/send_bytes 等）永远不会被派发；表现为"点连接没反应、串口连不上"；修复：在 while 循环顶部加 `processEvents()`
 11. **PySide6 `Q_ARG(bytes, ...)` 跨线程报错 `qArgDataFromPyType: Unable to find a QMetaType for "bytes"`** → Python 原生 `bytes` 不是注册的 QMetaType；修复：UI 端用 `Q_ARG(QByteArray, QByteArray(frame))`，slot 用 `@Slot(QByteArray)` 并在函数内 `bytes(payload)` 转回
+12. **擅自回滚 Git/项目历史** → 丢失用户或阶段性开发成果；回滚必须始终由用户亲手执行，Codex 只能给风险说明和建议命令，不能执行 `reset/restore/checkout --/revert/clean`
+13. **开发后不更新进度和记忆** → 下轮重复踩坑；完成可验证功能、根因确认、纠错或新约束后立即写 `dev-log.md`，长周期任务同步项目文档
+14. **高风险修改前不备份** → 用户误回滚后代码消失；多文件/飞控安全/协议/GUI大阶段修改前必要时保存补丁和关键文件到 `记忆迁移/codex记忆迁移/backups/`
 
 ---
 
