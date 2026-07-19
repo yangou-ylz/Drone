@@ -102,10 +102,6 @@ void Uplink_Cmd_Tick(void);
  * 调用方需保证 SC/AC 已校验通过。 */
 void Uplink_Cmd_Dispatch(u8 *data, u8 len);
 
-/* UART2 专用 0xF5 接收入口：PD6/RX 每字节进入独立状态机，避免与 UART5/IMU
- * 共用 ANO_DT_LX_Data_Receive_Prepare() 的 static 状态。 */
-void Uplink_Cmd_Uart2RxByte(u8 data);
-
 /* 低层协议解析器发现 0xF5 校验失败时调用，只计数并异步日志，不在 RX 栈内发帧。 */
 void Uplink_Cmd_Record_F5_Checksum_Error(void);
 

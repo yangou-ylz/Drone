@@ -84,7 +84,9 @@ def decode_attitude_quat(data: bytes, ts: Optional[float] = None) -> Optional[At
     if norm_sq < 0.5 or norm_sq > 1.5:
         # 数据明显异常（手册扩 10000 倍传输有小量化误差，模长应非常接近 1）
         return None
-    # 四元数 -> 欧拉（ZYX）
+    # 四元数 -> 欧拉（ZYX）。
+    # 原始四元数按常规右手系公式转出后，pitch/yaw 与凌霄 0x03 欧拉角符号相反；
+    # 以 0x03 官方直出欧拉角为显示/上层语义基准，因此这里统一翻转 pitch/yaw。
     # roll  = atan2(2(wx+yz), 1 - 2(x^2+y^2))
     # pitch = asin (2(wy - zx))，限幅防越界
     # yaw   = atan2(2(wz+xy), 1 - 2(y^2+z^2))
@@ -99,8 +101,8 @@ def decode_attitude_quat(data: bytes, ts: Optional[float] = None) -> Optional[At
     return AttitudeSample(
         ts=ts if ts is not None else time.monotonic(),
         roll_deg=math.degrees(roll),
-        pitch_deg=math.degrees(pitch),
-        yaw_deg=-math.degrees(yaw),   # 匿名IMU四元数为NED旋转（偏航顺时针为正），取负翻转到NWU与0x03一致
+        pitch_deg=-math.degrees(pitch),
+        yaw_deg=-math.degrees(yaw),
         source="quat",
         fusion_sta=raw[4],
     )

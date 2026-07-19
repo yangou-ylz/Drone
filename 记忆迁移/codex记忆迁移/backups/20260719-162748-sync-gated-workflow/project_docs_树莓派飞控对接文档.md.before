@@ -1,6 +1,6 @@
 # 树莓派 × STM32 飞控正式对接文档
 
-**版本**：v1.2 · 2026-07-19
+**版本**：v1.1 · 2026-07-19
 **对象**：树莓派侧开发人员 / 树莓派侧 AI 代码生成器
 **飞控硬件**：凌霄飞控 = STM32F407 可编程主控 + 凌霄 IMU 闭源控制核心
 
@@ -36,20 +36,9 @@ STM32F407
 
 当前 STM32 阶段状态：
 
-- `UART2` 已按 `PD5=TX / PD6=RX / 500000 / 8N1 / 无校验 / 无流控` 接入树莓派链路。
-- `0xF5` 已进入 UART2 专用接收状态机，校验 `AA 61/FF F5 19`、31B 总长、SC/AC。
-- 校验通过后已解析 `cur_x/y/z`、`tar_x/y/z`、`flags`，并通过 UART2 TX 回 `0xA0` 绿色 ACK。
-- 树莓派侧已实测固定帧、X/Y/Z 方向帧、`SLAM_VALID/TARGET_VALID` flags 帧均能收到正确 ACK。
-- 当前固件仍然 **只收、只解析、只回日志，不控飞**。
+- `0xF5` 已规划为树莓派位置帧。
+- 第一阶段固件目标是 **只收、只解析、只回日志，不控飞**。
 - 树莓派侧不能假设发送 `0xF5` 后飞机会运动；运动控制必须等后续阶段逐步打开。
-
-协作调度方式：
-
-- 本项目现在采用 **双端同步阶段闸门**，不是飞控侧或树莓派侧单线推进。
-- 每一阶段由飞控侧先完成一个最小可验证改动并汇报当前进度。
-- 随后明确树莓派侧必须执行的脚本、期望日志、失败时需要回传的材料。
-- 树莓派侧完成并把日志/结果发回后，飞控侧再继续下一阶段。
-- 未收到当前阶段树莓派侧通过结果前，不进入后续控制阶段，尤其不跳级接 PID、`0x41` 或实机运动输出。
 
 ---
 
@@ -251,14 +240,13 @@ def build_f5_frame(cur_x, cur_y, cur_z, tar_x, tar_y, tar_z, flags):
 - 第一阶段看到 STM32 回传类似：
 
 ```text
-[RX 0xA0 GREEN] F5 #12 f=03 c=0,0,80 t=100,0,80
+[RX 0xA0 GREEN] F5 #12 f=03 c=0,0,80
+[RX 0xA0 GREEN] F5 #12 f=03 t=100,0,80
 ```
 
 ---
 
 ## 6. 分阶段联调计划
-
-执行原则：每个阶段必须“飞控侧完成并汇报 → 树莓派侧按指定命令验证 → 用户回传日志 → 再进入下一阶段”。不要一次性把后续控制目标全部做完。
 
 ### 阶段 0：文档和代码版本确认
 
@@ -299,7 +287,8 @@ python3 groundTest/send_f5.py --port /dev/ttyUSB0 --cur 0,0,80 --tar 100,0,80
 
 - 树莓派日志出现 `[TX #1]`。
 - 树莓派收到 STM32 `0xA0`：
-  - `F5 #... f=03 c=0,0,80 t=100,0,80`
+  - `F5 #... f=03 c=0,0,80`
+  - `F5 #... f=03 t=100,0,80`
 
 ### 阶段 3：固定坐标方向测试
 
@@ -343,8 +332,7 @@ python3 groundTest/send_f5.py --port /dev/ttyUSB0 --cur 0,0,0 --tar 100,0,0 --ta
 规则：
 
 - `tar = cur`
-- 第一轮真实 SLAM 测试建议 `TARGET_VALID=0`，即 flags 只置 `SLAM_VALID`；也可以 `tar=cur` 作为双保险。
-- SLAM 未收敛、定位跳变或丢失时必须清 `SLAM_VALID=0`。
+- `TARGET_VALID` 可以为 0，或为 1 但目标等于当前。
 - 不允许触发实际运动。
 
 验收：
@@ -353,7 +341,6 @@ python3 groundTest/send_f5.py --port /dev/ttyUSB0 --cur 0,0,0 --tar 100,0,0 --ta
 - 单位是 cm。
 - 静止时噪声可接受。
 - 起点附近不会突然出现十几米偏移。
-- STM32 ACK 中 `c=` 能连续反映真实 SLAM 当前位置；`t=` 等于 `c=` 或目标无效。
 
 ### 阶段 6：目标坐标日志干运行
 
@@ -423,12 +410,10 @@ python3 groundTest/send_f5.py --port /dev/ttyUSB0 --cur 0,0,0 --tar 100,0,0 --ta
 
 树莓派侧：
 
-- [x] 使用 USB-TTL 打开 `/dev/serial/by-id/...` 或 `/dev/ttyUSB0`。
-- [x] 跑通 `test_f5_frame.py`。
-- [x] 跑通固定 `send_f5.py` 并收到 STM32 `0xA0` ACK。
-- [x] 跑通 X/Y/Z 固定方向帧 ACK 测试。
-- [x] 跑通 `SLAM_VALID/TARGET_VALID` flags 失效 ACK 测试。
-- [x] 实现屏幕 + 文件日志。
+- [ ] 使用 USB-TTL 打开 `/dev/serial/by-id/...` 或 `/dev/ttyUSB0`。
+- [ ] 跑通 `test_f5_frame.py`。
+- [ ] 跑通固定 `send_f5.py`。
+- [ ] 实现屏幕 + 文件日志。
 - [ ] 完成 SLAM 世界坐标到飞控坐标系转换。
 - [ ] SLAM 未收敛时清除 `SLAM_VALID`。
 - [ ] 视觉/目标无效时清除 `TARGET_VALID` 或令 `tar=cur`。
@@ -436,9 +421,8 @@ python3 groundTest/send_f5.py --port /dev/ttyUSB0 --cur 0,0,0 --tar 100,0,0 --ta
 STM32 侧：
 
 - [x] `0xF5` 进入上行分发。
-- [x] `UART2 RX` 从 `NoUse` 改为 `Uplink_Cmd_Uart2RxByte`，PD6 能接收树莓派字节流。
 - [x] 解析 `cur/tar/flags` 并保存快照。
-- [x] 通过 UART2 TX / PD5 回 `0xA0` 绿色 ACK：`F5 #... f=03 c=... t=...`。
+- [x] 通过 `0xA0` 回 ACK/日志。
 - [x] 当前阶段不接 PID、不改飞行输出。
 - [ ] 后续阶段增加超时保护。
 - [ ] 后续阶段增加误差/PID干运行日志。

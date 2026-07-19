@@ -213,26 +213,26 @@ class Attitude3DPanel(QWidget):
         """按 ZYX 顺序把姿态应用到 GL item。
 
         使用 Transform3D（后乘）保证旋转合成正确：
-        T = Rz(−yaw) · Ry(pitch) · Rx(roll)
+        T = Rz(−yaw) · Ry(pitch) · Rx(−roll)
 
-        符号约定（与路径可视化一致）：
+        符号约定：
         - yaw 取负：IMU NED 顺时针正，pyqtgraph CCW 正，渲染端取负对齐
-        - pitch / roll 保持原符号：0x04 四元数已转 NWU，
-          正 roll = 右横滚（左翼上扬），正 pitch = 抬头，与 pyqtgraph 方向一致
+        - roll 取负：pyqtgraph 右手系绕 +X 的正向视觉与实机横滚方向相反
+        - pitch 保持原符号：0x04 四元数已在解码层对齐 0x03 欧拉角
         """
         m = Transform3D()
         m.rotate(-yaw,  0, 0, 1)
         m.rotate(pitch, 0, 1, 0)
-        m.rotate(roll,  1, 0, 0)
+        m.rotate(-roll, 1, 0, 0)
         item.setTransform(m)
 
     def _rotation_matrix(self, roll: float, pitch: float, yaw: float):
-        """返回与 _apply_attitude 一致的旋转矩阵 M = Rz(−yaw)·Ry(pitch)·Rx(roll)。
+        """返回与 _apply_attitude 一致的旋转矩阵 M = Rz(−yaw)·Ry(pitch)·Rx(−roll)。
 
         用于把机体系轴向量映射到世界系，给三根轴标签定位。
-        符号与 _apply_attitude 完全一致：yaw 取负，pitch/roll 保持原符号。
+        符号与 _apply_attitude 完全一致：yaw/roll 取负，pitch 保持原符号。
         """
-        r = math.radians(roll)
+        r = math.radians(-roll)
         p = math.radians(pitch)
         y = math.radians(-yaw)
         cr, sr = math.cos(r), math.sin(r)

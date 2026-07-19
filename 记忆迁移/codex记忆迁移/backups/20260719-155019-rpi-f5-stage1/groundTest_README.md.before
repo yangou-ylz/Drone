@@ -3,7 +3,6 @@
 通过电脑直连匿名数传（USB 转串口）→ 凌霄IMU → STM32F407，发送/监听协议帧。  
 - **阶段1**：`0xF1` 灵活帧上行 + `0xA0` 字符串回显链路（已验证）
 - **阶段2**：`0xF2` 参数写入帧，运行时改 PID3D 三轴目标坐标（已验证）
-- **阶段3a**：`0xF5` 树莓派位置帧，上行解析 + `0xA0` ACK/日志（只收不控飞，待实机联调）
 
 ## 依赖
 
@@ -53,43 +52,6 @@ python monitor.py --port COM5
 ```
 
 实时打印每一帧：帧头/目标/CMD/LEN/DATA(hex)/SC/AC，对 0xA0 帧额外解 ASCII 字符串。
-
-### 4. 离线验证 0xF5 构帧
-
-```powershell
-python groundTest/test_f5_frame.py
-# → test_f5_frame.py: OK
-```
-
-验证内容：
-- 帧长固定 31B
-- 帧头固定 `AA 61 F5 19`
-- 6 个坐标字段为 signed s32 小端 cm
-- `None/NaN` 无效轴按 signed int `-2147483648` 打包，字节为 `00 00 00 80`
-- 黄金样例 `cur=(0,0,80), tar=(100,0,80), flags=0x03` 的完整帧为：
-
-```text
-AA 61 F5 19 00 00 00 00 00 00 00 00 50 00 00 00 64 00 00 00 00 00 00 00 50 00 00 00 03 20 36
-```
-
-### 5. 发送 0xF5 并监听 STM32 日志
-
-树莓派 USB-TTL 推荐：
-
-```bash
-python3 groundTest/send_f5.py --port /dev/ttyUSB0 --cur 0,0,80 --tar 100,0,80
-python3 groundTest/send_f5.py --port /dev/ttyUSB0 --cur 0,0,0 --tar 0,100,0 --rate 10 --duration 5
-python3 groundTest/send_f5.py --port /dev/ttyUSB0 --cur 0,0,0 --tar 0,0,100 --rate 10 --duration 5
-```
-
-脚本会同时写屏幕和 `logs/send_f5.log`。飞控当前阶段只回 `0xA0` 日志，例如：
-
-```text
-[RX 0xA0 GREEN] F5 #12 f=03 c=0,0,80
-[RX 0xA0 GREEN] F5 #12 f=03 t=100,0,80
-```
-
-> 注意：阶段3a 固件只解析和日志确认，不接 PID、不写 0x41、不改变飞行输出。
 
 ## 阶段1 验收建议流程
 

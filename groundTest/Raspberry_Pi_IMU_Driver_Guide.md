@@ -18,11 +18,12 @@ x= 12:
             x = _s16(p, 2) * 0.0001
             y = _s16(p, 4) * 0.0001
             z = _s16(p, 6) * 0.0001
-            # 在此直接算欧拉角，减少外部调用
+            # 在此直接算欧拉角，减少外部调用。
+            # 以凌霄 0x03 欧拉角为基准：四元数常规公式转出的 pitch/yaw 需翻号。
             roll  = math.degrees(math.atan2(2*(w*x+y*z), 1-2*(x*x+y*y)))
             sinp  = max(-1.0, min(1.0, 2*(w*y-z*x)))
-            pitch = math.degrees(math.asin(sinp))
-            yaw   = math.degrees(math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z)))
+            pitch = -math.degrees(math.asin(sinp))
+            yaw   = -math.degrees(math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z)))
             return {
                 'w': w, 'x': x, 'y': y, 'z': z,
                 'roll_deg': roll, 'pitch_deg': pitch, 'yaw_deg': yaw,

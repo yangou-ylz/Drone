@@ -1,7 +1,7 @@
 #ifndef __UPLINK_CMD_H
 #define __UPLINK_CMD_H
 /******************************************************************************
- * 上行指令模块（F1/F2/F3 调试参数 + F5 树莓派位置帧）
+ * 上行指令模块（阶段1: F1 链路验证 + 阶段2: F2 参数运行时写入）
  * ----------------------------------------------------------------------------
  * 用途：
  *   电脑端通过匿名数传 → 凌霄IMU → STM32F407 发送上行帧；本模块负责
@@ -27,12 +27,6 @@
  *   - 三轴各自独立限幅为 ±PARAM_GOAL_LIMIT_CM；任一轴被 clamp 则回显末尾带 "CLP"
  *   - 回显格式："P*=30.0,44.0,55.0" 或 "P*=500.0,44.0,55.0 CLP"（绿色）
  *   - 与 0xF2 共享 RAM 存储与 Getter，生效时机一致（任务启动时拍照）。
- *
- * 阶段3a：0xF5 树莓派位置帧（只解析/日志，不接控制输出）
- *   - 帧格式：AA 61/FF F5 19 | cur_xyz(s32 cm) | tar_xyz(s32 cm) | flags | SC AC
- *   - flags bit0=SLAM_VALID, bit1=TARGET_VALID, bit2=VISUAL_MODE
- *   - 当前阶段只保存最近一帧、统计计数、通过 0xA0 输出 ACK/日志；
- *     不写 PID、不改 rt_tar、不触发 0x41，避免联调期误控飞。
  *
  * 触发条件：
  *   - Uplink_Cmd_Init 在 All_Init 末尾调用一次；
@@ -62,36 +56,6 @@
 /* 阶段2 安全限幅：目标坐标绝对值上限（单位 cm，5 米室内足够） */
 #define PARAM_GOAL_LIMIT_CM 500.0f
 
-/* 0xF5 树莓派位置帧常量 */
-#define UPLINK_F5_CMD 0xF5
-#define UPLINK_F5_DATA_LEN 0x19
-#define UPLINK_F5_TOTAL_LEN 31
-#define UPLINK_F5_INVALID_S32 (-2147483647L - 1L)
-
-#define UPLINK_F5_FLAG_SLAM_VALID 0x01
-#define UPLINK_F5_FLAG_TARGET_VALID 0x02
-#define UPLINK_F5_FLAG_VISUAL_MODE 0x04
-
-/* 全局日志等级：经 Uplink_Cmd_Tick() 异步转成 0xA0 字符串帧。 */
-#define UPLINK_LOG_ERR 1
-#define UPLINK_LOG_WARN 2
-#define UPLINK_LOG_INFO 3
-#define UPLINK_LOG_DBG 4
-
-typedef struct
-{
-    s32 cur_x_cm;
-    s32 cur_y_cm;
-    s32 cur_z_cm;
-    s32 tar_x_cm;
-    s32 tar_y_cm;
-    s32 tar_z_cm;
-    u8 flags;
-    u32 rx_cnt;
-    u32 len_err_cnt;
-    u32 checksum_err_cnt;
-} _uplink_f5_snapshot_st;
-
 /* 初始化：清状态机、回显缓冲，并把 goal 默认值写为 PID3D_GOAL_X/Y/Z_CM。 */
 void Uplink_Cmd_Init(void);
 
@@ -102,24 +66,11 @@ void Uplink_Cmd_Tick(void);
  * 调用方需保证 SC/AC 已校验通过。 */
 void Uplink_Cmd_Dispatch(u8 *data, u8 len);
 
-/* UART2 专用 0xF5 接收入口：PD6/RX 每字节进入独立状态机，避免与 UART5/IMU
- * 共用 ANO_DT_LX_Data_Receive_Prepare() 的 static 状态。 */
-void Uplink_Cmd_Uart2RxByte(u8 data);
-
-/* 低层协议解析器发现 0xF5 校验失败时调用，只计数并异步日志，不在 RX 栈内发帧。 */
-void Uplink_Cmd_Record_F5_Checksum_Error(void);
-
 /* 阶段2 Getter：任务启动时由 User_Task 调用一次拍照锁定。
  * 返回当前 RAM 中保存的目标坐标（已做限幅）。 */
 float Uplink_GetGoalX_Cm(void);
 float Uplink_GetGoalY_Cm(void);
 float Uplink_GetGoalZ_Cm(void);
-
-/* 读取最近一帧树莓派位置快照。返回 1=已有至少一帧合法 0xF5，0=尚未收到。 */
-u8 Uplink_F5_GetSnapshot(_uplink_f5_snapshot_st *out);
-
-/* 全局日志入口：后续新代码优先用它排查问题，避免直接在高频路径里发串口。 */
-void Uplink_Log(u8 level, const char *msg);
 
 /* 0x00 校验返回帧（ACK）发送骨架，阶段1/2 暂未挂载使用，预留给后续阶段。 */
 void Uplink_Send_Ack(u8 id_get, u8 sc_get, u8 ac_get);

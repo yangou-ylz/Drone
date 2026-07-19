@@ -18,6 +18,15 @@ ADDR_UPPER     = 0xAF  # 上位机
 ADDR_IMU       = 0x60  # 凌霄IMU
 ADDR_FC_STM32  = 0x61  # 凌霄飞控STM32（即 HW_TYPE）
 
+# 0xF5 树莓派位置帧
+CMD_RPI_POSITION = 0xF5
+F5_DATA_LEN = 0x19
+INVALID_S32 = -2147483648
+
+FLAG_SLAM_VALID = 0x01
+FLAG_TARGET_VALID = 0x02
+FLAG_VISUAL_MODE = 0x04
+
 # 颜色（0xA0 字符串帧首字节）
 COLOR_BLACK = 0
 COLOR_RED   = 1
@@ -73,6 +82,51 @@ def build_f3_xyz(dest: int, x: float, y: float, z: float) -> bytes:
     """
     data = struct.pack("<fff", float(x), float(y), float(z))
     return build_frame(dest, 0xF3, data)
+
+
+def _to_s32_cm(v: int | float | None) -> int:
+    """把 cm 输入转换为 signed s32；None/NaN 使用 0x80000000 无效哨兵。"""
+    if v is None:
+        return INVALID_S32
+    if isinstance(v, float) and v != v:
+        return INVALID_S32
+    iv = int(round(v))
+    if not (INVALID_S32 <= iv <= 2147483647):
+        raise ValueError(f"value out of s32 range: {v}")
+    return iv
+
+
+def build_f5_position(
+    dest: int,
+    cur_x: int | float | None,
+    cur_y: int | float | None,
+    cur_z: int | float | None,
+    tar_x: int | float | None,
+    tar_y: int | float | None,
+    tar_z: int | float | None,
+    flags: int,
+) -> bytes:
+    """树莓派位置帧 0xF5。
+
+    DATA = cur_x/y/z + tar_x/y/z（signed s32 little-endian，单位 cm）+ flags。
+    注意：无效轴在协议字节上是 0x80000000，但 Python signed int 必须写
+    -2147483648，不能把 0x80000000 直接传给 struct.pack('<i')。
+    """
+    if not (0 <= int(flags) <= 0xFF):
+        raise ValueError(f"flags out of u8 range: {flags}")
+    data = struct.pack(
+        "<iiiiiiB",
+        _to_s32_cm(cur_x),
+        _to_s32_cm(cur_y),
+        _to_s32_cm(cur_z),
+        _to_s32_cm(tar_x),
+        _to_s32_cm(tar_y),
+        _to_s32_cm(tar_z),
+        int(flags) & 0xFF,
+    )
+    if len(data) != F5_DATA_LEN:
+        raise AssertionError(f"internal F5 length error: {len(data)}")
+    return build_frame(dest, CMD_RPI_POSITION, data)
 
 
 

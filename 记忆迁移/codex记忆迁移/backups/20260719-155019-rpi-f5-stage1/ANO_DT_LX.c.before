@@ -5,7 +5,7 @@
 #include "Drv_led.h"
 #include "LX_FC_State.h"
 #include "Drv_Uart.h"
-#include "Uplink_Cmd.h" /* 上行指令分发：F1/F2/F3 + RPi 0xF5 */
+#include "Uplink_Cmd.h" /* 上行指令分发：阶段1只处理0xF1 */
 
 /*==========================================================================
  * 描述    ：凌霄飞控通信主程序
@@ -172,13 +172,7 @@ static void ANO_DT_LX_Data_Receive_Anl(u8 *data, u8 len)
 	}
 	// 计算出的校验字节和收到的校验字节做对比，完全一致代表本帧数据合法，不一致则跳出解析函数
 	if ((check_sum1 != *(data + len - 2)) || (check_sum2 != *(data + len - 1))) // 判断sum校验
-	{
-		if (*(data + 2) == UPLINK_F5_CMD)
-		{
-			Uplink_Cmd_Record_F5_Checksum_Error();
-		}
 		return;
-	}
 	// 再次判断帧头以及目标地址是否合法
 	if (*(data) != 0xAA || (*(data + 1) != HW_TYPE && *(data + 1) != HW_ALL))
 		return;
@@ -349,11 +343,9 @@ static void ANO_DT_LX_Data_Receive_Anl(u8 *data, u8 len)
 		// 赋值参数
 		// Parameter_Set(_par,_val);
 	}
-	// ==== 上行指令分发（阶段1/2/3a）====
+	// ==== 上行指令分发（阶段1 + 阶段2）====
 	// 0xF1：灵活链路验证帧（仅回显，不写飞控状态）
 	// 0xF2：参数运行时写入帧（白名单：PID3D GOAL_X/Y/Z）
-	// 0xF3：一帧同时写入三轴目标坐标
-	// 0xF5：树莓派位置帧，当前仅解析/日志，不接控制输出
 	// 注意：不要用 0xE0/0xE2，那两个 CMD 已被上方原生分支占用（CK_Back 协议）。
 	else if (*(data + 2) == 0xF1)
 	{
@@ -366,11 +358,6 @@ static void ANO_DT_LX_Data_Receive_Anl(u8 *data, u8 len)
 	else if (*(data + 2) == 0xF3)
 	{
 		/* 0xF3：一帧同时写入三轴目标坐标 */
-		Uplink_Cmd_Dispatch(data, len);
-	}
-	else if (*(data + 2) == UPLINK_F5_CMD)
-	{
-		/* 0xF5：树莓派位置帧，阶段3a只保存快照和回0xA0日志 */
 		Uplink_Cmd_Dispatch(data, len);
 	}
 }

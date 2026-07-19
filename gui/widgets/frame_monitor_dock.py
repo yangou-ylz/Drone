@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.io.protocol import Frame
+from gui.services.telemetry_decoder import decode_attitude_quat
 
 
 # ---------------------------------------------------------------------------
@@ -84,8 +85,17 @@ def _fmt_quat(data: bytes) -> tuple[str, str]:
     if len(data) != struct.calcsize(fmt):
         return _fmt_raw(data)
     v0, v1, v2, v3, sta = struct.unpack(fmt, data)
-    s = f"w={v0/10000:.4f} x={v1/10000:.4f} y={v2/10000:.4f} z={v3/10000:.4f}"
-    d = (f"  V0 (w): {v0/10000:.5f}\n"
+    att = decode_attitude_quat(data)
+    if att is not None:
+        s = f"rol={att.roll_deg:.1f}° pit={att.pitch_deg:.1f}° yaw={att.yaw_deg:.1f}°"
+        d_head = (f"  Roll:     {att.roll_deg:.2f} °\n"
+                  f"  Pitch:    {att.pitch_deg:.2f} °\n"
+                  f"  Yaw:      {att.yaw_deg:.2f} °\n")
+    else:
+        s = f"w={v0/10000:.4f} x={v1/10000:.4f} y={v2/10000:.4f} z={v3/10000:.4f}"
+        d_head = ""
+    d = (d_head
+         + f"  V0 (w): {v0/10000:.5f}\n"
          f"  V1 (x): {v1/10000:.5f}\n"
          f"  V2 (y): {v2/10000:.5f}\n"
          f"  V3 (z): {v3/10000:.5f}\n"

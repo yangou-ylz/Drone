@@ -7,7 +7,6 @@
 #include "ANO_DT_LX.h"
 #include "User_Task.h" /* 提供 PID3D_GOAL_X/Y/Z_CM 宏作为默认值 */
 #include "McuConfig.h" /* 提供 UartSendLXIMU 宏 */
-#include "Drv_Uart.h"
 
 #if UPLINK_CMD_EN
 
@@ -43,6 +42,7 @@ static u8 s_last_p3_clamped; /* 1 = 任一轴被限幅 */
 
 static _uplink_f5_snapshot_st s_f5_snapshot;
 static u8 s_f5_has_frame;
+static u8 s_f5_echo_phase;
 
 /* ---------- 全局日志：异步转 0xA0，避免在高频/中断路径里直接刷屏 ---------- */
 
@@ -207,86 +207,6 @@ static s32 le_s32_read(const u8 *p)
     return (s32)u;
 }
 
-static void uplink_a0_send_uart2(u8 color, const char *str)
-{
-    u8 buf[4 + 1 + STRING_INFO_MAX_LEN + 2];
-    u8 cnt = 0;
-    u8 i = 0;
-    u8 sc = 0;
-    u8 ac = 0;
-
-    if (str == 0)
-    {
-        return;
-    }
-
-    buf[cnt++] = 0xAA;
-    buf[cnt++] = HW_ALL;
-    buf[cnt++] = 0xA0;
-    buf[cnt++] = 0;
-    buf[cnt++] = color;
-
-    while (i < STRING_INFO_MAX_LEN && str[i] != '\0')
-    {
-        buf[cnt++] = (u8)str[i++];
-    }
-    buf[3] = (u8)(cnt - 4);
-
-    for (i = 0; i < cnt; i++)
-    {
-        sc += buf[i];
-        ac += sc;
-    }
-    buf[cnt++] = sc;
-    buf[cnt++] = ac;
-
-    DrvUart2SendBuf(buf, cnt);
-}
-
-static void build_f5_ack_str(char *buf, u8 *idx)
-{
-    append_str(buf, idx, "F5 #");
-    append_u32(buf, idx, s_f5_snapshot.rx_cnt);
-    append_str(buf, idx, " f=");
-    append_u8_hex(buf, idx, s_f5_snapshot.flags);
-    append_str(buf, idx, " c=");
-    append_s32(buf, idx, s_f5_snapshot.cur_x_cm);
-    append_char(buf, idx, ',');
-    append_s32(buf, idx, s_f5_snapshot.cur_y_cm);
-    append_char(buf, idx, ',');
-    append_s32(buf, idx, s_f5_snapshot.cur_z_cm);
-    append_str(buf, idx, " t=");
-    append_s32(buf, idx, s_f5_snapshot.tar_x_cm);
-    append_char(buf, idx, ',');
-    append_s32(buf, idx, s_f5_snapshot.tar_y_cm);
-    append_char(buf, idx, ',');
-    append_s32(buf, idx, s_f5_snapshot.tar_z_cm);
-}
-
-static void send_f5_error_uart2(void)
-{
-    char buf[STRING_INFO_MAX_LEN + 1];
-    u8 idx = 0;
-
-    if (s_f5_last_err == F5_ERR_LEN)
-    {
-        append_str(buf, &idx, "F5 LEN ERR #");
-        append_u32(buf, &idx, s_f5_snapshot.len_err_cnt);
-    }
-    else if (s_f5_last_err == F5_ERR_CHECKSUM)
-    {
-        append_str(buf, &idx, "F5 CK ERR #");
-        append_u32(buf, &idx, s_f5_snapshot.checksum_err_cnt);
-    }
-    else
-    {
-        append_str(buf, &idx, "F5 ERR");
-    }
-
-    buf[idx] = '\0';
-    uplink_a0_send_uart2(STRING_INFO_COLOR_RED, buf);
-}
-
 /* ---------- 工具：把 float 转 "<整数>.<一位小数>" ---------- */
 #if PARAM_WRITE_EN
 static u8 float_to_dec1(float v, char *buf)
@@ -386,6 +306,7 @@ void Uplink_Cmd_Init(void)
     s_f5_snapshot.len_err_cnt = 0;
     s_f5_snapshot.checksum_err_cnt = 0;
     s_f5_has_frame = 0;
+    s_f5_echo_phase = 0;
     s_f5_last_err = F5_ERR_NONE;
     s_pending_log_color = STRING_INFO_COLOR_GREEN;
     s_pending_log_str[0] = '\0';
@@ -431,110 +352,10 @@ void Uplink_Cmd_Record_F5_Checksum_Error(void)
 {
     s_f5_snapshot.checksum_err_cnt++;
     s_f5_last_err = F5_ERR_CHECKSUM;
-    send_f5_error_uart2();
-}
 
-void Uplink_Cmd_Uart2RxByte(u8 data)
-{
-    static u8 rx_buf[UPLINK_F5_TOTAL_LEN];
-    static u8 rx_state = 0;
-    static u8 rx_idx = 0;
-    u8 sc;
-    u8 ac;
-    u8 i;
-
-    switch (rx_state)
+    if (s_echo_kind != ECHO_KIND_PARAM && s_echo_kind != ECHO_KIND_PARAM3)
     {
-    case 0:
-        if (data == 0xAA)
-        {
-            rx_buf[0] = data;
-            rx_idx = 1;
-            rx_state = 1;
-        }
-        break;
-
-    case 1:
-        if (data == HW_TYPE || data == HW_ALL)
-        {
-            rx_buf[rx_idx++] = data;
-            rx_state = 2;
-        }
-        else
-        {
-            rx_state = 0;
-            rx_idx = 0;
-        }
-        break;
-
-    case 2:
-        if (data == UPLINK_F5_CMD)
-        {
-            rx_buf[rx_idx++] = data;
-            rx_state = 3;
-        }
-        else
-        {
-            rx_state = 0;
-            rx_idx = 0;
-        }
-        break;
-
-    case 3:
-        if (data == UPLINK_F5_DATA_LEN)
-        {
-            rx_buf[rx_idx++] = data;
-            rx_state = 4;
-        }
-        else
-        {
-            s_f5_snapshot.len_err_cnt++;
-            s_f5_last_err = F5_ERR_LEN;
-            send_f5_error_uart2();
-            rx_state = 0;
-            rx_idx = 0;
-        }
-        break;
-
-    case 4:
-        rx_buf[rx_idx++] = data;
-        if (rx_idx >= (u8)(UPLINK_F5_DATA_LEN + 4u))
-        {
-            rx_state = 5;
-        }
-        break;
-
-    case 5:
-        rx_buf[rx_idx++] = data;
-        rx_state = 6;
-        break;
-
-    case 6:
-        rx_buf[rx_idx++] = data;
-        sc = 0;
-        ac = 0;
-        for (i = 0; i < (u8)(UPLINK_F5_DATA_LEN + 4u); i++)
-        {
-            sc += rx_buf[i];
-            ac += sc;
-        }
-        if (sc == rx_buf[UPLINK_F5_DATA_LEN + 4u] &&
-            ac == rx_buf[UPLINK_F5_DATA_LEN + 5u])
-        {
-            Uplink_Cmd_Dispatch(rx_buf, UPLINK_F5_TOTAL_LEN);
-        }
-        else
-        {
-            Uplink_Cmd_Record_F5_Checksum_Error();
-        }
-        rx_state = 0;
-        rx_idx = 0;
-        break;
-
-    default:
-        rx_state = 0;
-        rx_idx = 0;
-        break;
+        s_echo_kind = ECHO_KIND_F5_ERR;
     }
 }
 
@@ -610,7 +431,10 @@ void Uplink_Cmd_Dispatch(u8 *data, u8 len)
         {
             s_f5_snapshot.len_err_cnt++;
             s_f5_last_err = F5_ERR_LEN;
-            send_f5_error_uart2();
+            if (s_echo_kind != ECHO_KIND_PARAM && s_echo_kind != ECHO_KIND_PARAM3)
+            {
+                s_echo_kind = ECHO_KIND_F5_ERR;
+            }
             return;
         }
 
@@ -624,13 +448,9 @@ void Uplink_Cmd_Dispatch(u8 *data, u8 len)
         s_f5_snapshot.rx_cnt++;
         s_f5_has_frame = 1;
 
+        if (s_echo_kind == ECHO_KIND_NONE || s_echo_kind == ECHO_KIND_F5)
         {
-            char ack[STRING_INFO_MAX_LEN + 1];
-            u8 ack_idx = 0;
-
-            build_f5_ack_str(ack, &ack_idx);
-            ack[ack_idx] = '\0';
-            uplink_a0_send_uart2(STRING_INFO_COLOR_GREEN, ack);
+            s_echo_kind = ECHO_KIND_F5;
         }
         return;
     }
@@ -764,7 +584,31 @@ void Uplink_Cmd_Tick(void)
     }
     else if (s_echo_kind == ECHO_KIND_F5)
     {
-        build_f5_ack_str(buf, &idx);
+        append_str(buf, &idx, "F5 #");
+        append_u32(buf, &idx, s_f5_snapshot.rx_cnt);
+        append_str(buf, &idx, " f=");
+        append_u8_hex(buf, &idx, s_f5_snapshot.flags);
+
+        if (s_f5_echo_phase == 0u)
+        {
+            append_str(buf, &idx, " c=");
+            append_s32(buf, &idx, s_f5_snapshot.cur_x_cm);
+            append_char(buf, &idx, ',');
+            append_s32(buf, &idx, s_f5_snapshot.cur_y_cm);
+            append_char(buf, &idx, ',');
+            append_s32(buf, &idx, s_f5_snapshot.cur_z_cm);
+            s_f5_echo_phase = 1u;
+        }
+        else
+        {
+            append_str(buf, &idx, " t=");
+            append_s32(buf, &idx, s_f5_snapshot.tar_x_cm);
+            append_char(buf, &idx, ',');
+            append_s32(buf, &idx, s_f5_snapshot.tar_y_cm);
+            append_char(buf, &idx, ',');
+            append_s32(buf, &idx, s_f5_snapshot.tar_z_cm);
+            s_f5_echo_phase = 0u;
+        }
     }
     else if (s_echo_kind == ECHO_KIND_F5_ERR)
     {
@@ -905,10 +749,6 @@ void Uplink_Cmd_Dispatch(u8 *data, u8 len)
 {
     (void)data;
     (void)len;
-}
-void Uplink_Cmd_Uart2RxByte(u8 data)
-{
-    (void)data;
 }
 void Uplink_Cmd_Record_F5_Checksum_Error(void) {}
 float Uplink_GetGoalX_Cm(void) { return (float)PID3D_GOAL_X_CM; }
