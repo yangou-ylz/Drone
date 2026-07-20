@@ -73,7 +73,7 @@
  * 自定义帧下发给 GUI。DATA = cur/tar(6*s32 cm) + flags + 3个u32计数。 */
 #define UPLINK_F6_CMD 0xF6
 #define UPLINK_F6_DATA_LEN 37
-#define UPLINK_F6_MIRROR_TICK_GAP 2u /* Uplink_Cmd_Tick=50Hz，2tick约25Hz；仅GUI调试镜像 */
+#define UPLINK_F6_MIRROR_TICK_GAP 5u /* Uplink_Cmd_Tick=50Hz，5tick约10Hz */
 
 #define UPLINK_F5_FLAG_SLAM_VALID 0x01
 #define UPLINK_F5_FLAG_TARGET_VALID 0x02

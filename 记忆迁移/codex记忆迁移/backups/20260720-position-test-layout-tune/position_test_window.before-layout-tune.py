@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSizePolicy,
-    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -407,14 +406,15 @@ class _StabilityPage(QWidget):
         controls.addWidget(self._btn_start)
         controls.addWidget(self._btn_stop)
         controls.addWidget(self._btn_clear)
-        controls.addSpacing(18)
+        controls.addStretch(1)
 
         self._summary = QLabel("未开始", control_box)
-        self._summary.setWordWrap(False)
+        self._summary.setWordWrap(True)
+        self._summary.setMaximumWidth(430)
         self._summary.setStyleSheet("color:#69F0AE; font-size:17px; font-weight:bold;")
         self._summary.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._summary.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        controls.addWidget(self._summary, 1)
+        self._summary.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        controls.addWidget(self._summary)
         root.addWidget(control_box)
 
         self._table = QTableWidget(len(self._ROWS), 9, self)
@@ -524,14 +524,13 @@ class _StabilityPage(QWidget):
         if self._t_start is not None and samples:
             elapsed = max(0.0, samples[-1].ts - self._t_start)
         if self._running:
-            phase = f"测试 {elapsed:.1f}/{float(self._duration_s.value()):.1f}s"
+            phase = f"测试中 {elapsed:.1f}/{float(self._duration_s.value()):.1f}s"
         elif self._done:
-            phase = "完成"
+            phase = "测试完成"
         else:
-            phase = ""
-        prefix = f"{phase} | " if phase else ""
+            phase = "未开始：点击“开始测试”后才采样"
         self._summary.setText(
-            f"{prefix}样本 {len(samples)} | 有效 {len(valid)} | 无效 {invalid_count} | "
+            f"{phase} | 样本 {len(samples)} | 有效 {len(valid)} | 无效 {invalid_count} | "
             f"F5 {f5_rate:.1f}Hz / F6 {mirror_rate:.1f}Hz | 节流/漏显 {rx_jump}"
         )
 
@@ -647,21 +646,9 @@ class _CalibrationPage(QWidget):
         self._refresh()
 
     def _build_ui(self) -> None:
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        scroll = QScrollArea(self)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        outer.addWidget(scroll, 1)
-
-        content = QWidget(scroll)
-        scroll.setWidget(content)
-        root = QVBoxLayout(content)
+        root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(8)
+        root.setSpacing(10)
 
         guide_box = QGroupBox("操作引导", self)
         guide_box.setStyleSheet(
@@ -743,8 +730,7 @@ class _CalibrationPage(QWidget):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self._capture_table.setItem(row, col, item)
         self._capture_table.horizontalHeader().setStretchLastSection(True)
-        self._fit_table_to_rows(self._capture_table, len(self._CAPTURE_ROWS), 35)
-        root.addWidget(self._capture_table, 0)
+        root.addWidget(self._capture_table)
 
         self._diag_table = QTableWidget(len(self._DIAG_ROWS), 2, self)
         self._diag_table.setHorizontalHeaderLabels(["项目", "结果"])
@@ -754,8 +740,7 @@ class _CalibrationPage(QWidget):
             self._diag_table.setItem(row, 1, QTableWidgetItem("--"))
         self._diag_table.horizontalHeader().setStretchLastSection(True)
         self._diag_table.setColumnWidth(0, 120)
-        self._fit_table_to_rows(self._diag_table, len(self._DIAG_ROWS), 35)
-        root.addWidget(self._diag_table, 0)
+        root.addWidget(self._diag_table, 1)
 
         note = QLabel(
             "流程：机体放在原点并对准现实前方黑线，采样 O；沿前方黑线平移固定距离采样 +X；"
@@ -765,7 +750,6 @@ class _CalibrationPage(QWidget):
         note.setWordWrap(True)
         note.setStyleSheet("color:#9E9E9E; font-size:12px;")
         root.addWidget(note)
-        root.addStretch(1)
 
     @staticmethod
     def _setup_table(table: QTableWidget) -> None:
@@ -779,17 +763,6 @@ class _CalibrationPage(QWidget):
             "QTableWidget::item:alternate{background:#2B2B2B; color:#DCDCDC;}"
             "QHeaderView::section{background:#333; color:#DCDCDC; padding:4px;}"
         )
-
-    @staticmethod
-    def _fit_table_to_rows(table: QTableWidget, rows: int, row_height: int) -> None:
-        for row in range(rows):
-            table.setRowHeight(row, row_height)
-        header_h = max(table.horizontalHeader().sizeHint().height(), 30)
-        height = header_h + rows * row_height + 8
-        table.setMinimumHeight(height)
-        table.setMaximumHeight(height)
-        table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def _clear(self) -> None:
         self._points = [None, None, None]

@@ -1,0 +1,10 @@
+{
+  "after_ordinary": "有遥测，无0xF6",
+  "after_f6": "实时",
+  "rx_label": "411",
+  "cur_x": "84",
+  "gui_rx_frames": "2",
+  "gui_f6_frames": "1",
+  "last_cmd": "0xF6 (0.3s前)",
+  "shot": "/home/ubuntu22/stm32/ANO_LX_FC/artifacts/gui/position_test_connected_f6.png"
+}

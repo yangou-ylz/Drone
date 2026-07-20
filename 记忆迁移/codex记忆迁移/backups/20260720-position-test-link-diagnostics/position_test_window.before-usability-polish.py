@@ -11,18 +11,15 @@ from typing import Deque, Optional
 
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtWidgets import (
-    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QPushButton,
     QSizePolicy,
-    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -71,7 +68,6 @@ class _RealtimePage(QWidget):
         self._last_any_cmd: Optional[int] = None
         self._last_any_wall = 0.0
         self._recent_ts: Deque[float] = deque(maxlen=200)
-        self._recent_rx: Deque[tuple[float, int]] = deque(maxlen=200)
         self._build_ui()
 
         self._timer = QTimer(self)
@@ -97,7 +93,6 @@ class _RealtimePage(QWidget):
             self._last_any_cmd = None
             self._last_any_wall = 0.0
             self._recent_ts.clear()
-            self._recent_rx.clear()
         self._refresh()
 
     def on_any_frame(self, cmd: int) -> None:
@@ -111,7 +106,6 @@ class _RealtimePage(QWidget):
         self._sample = sample
         self._last_rx_wall = time.monotonic()
         self._recent_ts.append(sample.ts)
-        self._recent_rx.append((sample.ts, int(sample.rx_cnt)))
         self._refresh()
 
     def _build_ui(self) -> None:
@@ -131,7 +125,7 @@ class _RealtimePage(QWidget):
         self._lbl_err = self._make_value_label("--")
         for col, (name, widget) in enumerate((
             ("状态", self._lbl_alive),
-            ("F5输入 / F6镜像", self._lbl_rate),
+            ("镜像帧率", self._lbl_rate),
             ("0xF5计数", self._lbl_rx),
             ("错误计数", self._lbl_err),
         )):
@@ -225,9 +219,8 @@ class _RealtimePage(QWidget):
 
         if len(self._recent_ts) >= 2:
             span = self._recent_ts[-1] - self._recent_ts[0]
-            mirror_rate = (len(self._recent_ts) - 1) / span if span > 1e-6 else 0.0
-            f5_rate = self._rx_rate()
-            self._lbl_rate.setText(f"{f5_rate:.1f} / {mirror_rate:.1f} Hz")
+            rate = (len(self._recent_ts) - 1) / span if span > 1e-6 else 0.0
+            self._lbl_rate.setText(f"{rate:.1f} Hz")
         else:
             self._lbl_rate.setText("-- Hz")
 
@@ -268,53 +261,19 @@ class _RealtimePage(QWidget):
             age = time.monotonic() - self._last_any_wall if self._last_any_wall else 0.0
             self._set_value(12, f"0x{self._last_any_cmd:02X} ({age:.1f}s前)")
 
-    def _rx_rate(self) -> float:
-        if len(self._recent_rx) < 2:
-            return 0.0
-        t0, c0 = self._recent_rx[0]
-        t1, c1 = self._recent_rx[-1]
-        span = t1 - t0
-        delta = c1 - c0
-        if span <= 1e-6 or delta < 0:
-            return 0.0
-        return float(delta) / span
-
 
 class _StabilityPage(QWidget):
-    """稳定性测试页：按用户点击开始/停止采样，默认用于静止定位抖动测试。"""
+    """静止稳定性页：统计 0xF6 当前坐标窗口内的抖动和链路跳变。"""
 
     _ROWS = (
         ("X 前+", 0),
         ("Y 左+", 1),
         ("Z 上+", 2),
     )
-    _TEST_MODES = (
-        (
-            "静止定位稳定性（推荐）",
-            "用途：飞机/雷达静止不动时，测试 SLAM 当前位置 cur 的抖动、漂移和跳变。"
-            "这是起飞前最重要的观测质量检查，不是飞行控制稳定性测试。",
-            "操作：放稳机体，不要移动；点击开始测试；等待设定时长自动结算。重点看标准差和峰峰值。",
-        ),
-        (
-            "定点悬停观测（仅记录）",
-            "用途：后续安全悬停时，只观察 SLAM 坐标是否稳定。当前 GUI 仍然只记录，不参与控制。",
-            "操作：确认安全后悬停，点击开始测试；重点看 Z 轴和 XY 是否慢慢漂移。",
-        ),
-        (
-            "慢速平移连续性",
-            "用途：沿黑线慢速移动时，检查坐标是否连续、有无跳变或短时间失效。"
-            "这不是静止稳定性，均值/峰峰值只作为范围参考。",
-            "操作：点击开始测试后匀速慢移；重点看跳变、无效样本和轨迹页曲线是否断裂。",
-        ),
-    )
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._active = False
-        self._running = False
-        self._done = False
-        self._t_start: Optional[float] = None
-        self._last_sample: Optional[RpiPositionMirrorSample] = None
         self._samples: Deque[RpiPositionMirrorSample] = deque(maxlen=5000)
         self._last_refresh = 0.0
         self._build_ui()
@@ -335,13 +294,7 @@ class _StabilityPage(QWidget):
     def on_sample(self, sample: RpiPositionMirrorSample) -> None:
         if not self._active:
             return
-        self._last_sample = sample
-        if self._running:
-            if self._t_start is None:
-                self._t_start = sample.ts
-            self._samples.append(sample)
-            if sample.ts - self._t_start >= float(self._duration_s.value()):
-                self._stop()
+        self._samples.append(sample)
         now = time.monotonic()
         if now - self._last_refresh >= 0.2:
             self._last_refresh = now
@@ -352,40 +305,21 @@ class _StabilityPage(QWidget):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(10)
 
-        guide_box = QGroupBox("测试说明", self)
-        guide_box.setStyleSheet(
-            "QGroupBox{background:#2B2B2B; color:#DCDCDC; font-size:12px;"
-            " border:1px solid #555; margin-top:8px; padding-top:8px;}"
-            "QGroupBox::title{subcontrol-origin: margin; left:8px; padding:0 4px;}"
-        )
-        guide_lay = QVBoxLayout(guide_box)
-        self._mode_help = QLabel("", guide_box)
-        self._mode_help.setWordWrap(True)
-        self._mode_help.setStyleSheet("color:#F5F5F5; font-size:13px; line-height:125%;")
-        guide_lay.addWidget(self._mode_help)
-        root.addWidget(guide_box)
-
-        control_box = QGroupBox("测试控制", self)
+        control_box = QGroupBox("采样窗口", self)
         control_box.setStyleSheet("QGroupBox{color:#B0B0B0; font-size:12px;}")
         controls = QHBoxLayout(control_box)
         controls.setSpacing(12)
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        self._mode_combo = QComboBox(control_box)
-        for label, _desc, _ops in self._TEST_MODES:
-            self._mode_combo.addItem(label)
-        self._mode_combo.currentIndexChanged.connect(lambda _idx: self._update_mode_help())
-        form.addRow("测试类型", self._mode_combo)
-
-        self._duration_s = QDoubleSpinBox(control_box)
-        self._duration_s.setRange(3.0, 120.0)
-        self._duration_s.setSingleStep(1.0)
-        self._duration_s.setDecimals(1)
-        self._duration_s.setSuffix(" s")
-        self._duration_s.setValue(10.0)
-        self._duration_s.valueChanged.connect(lambda _v: self._refresh())
-        form.addRow("测试时长", self._duration_s)
+        self._window_s = QDoubleSpinBox(control_box)
+        self._window_s.setRange(1.0, 120.0)
+        self._window_s.setSingleStep(1.0)
+        self._window_s.setDecimals(1)
+        self._window_s.setSuffix(" s")
+        self._window_s.setValue(10.0)
+        self._window_s.valueChanged.connect(lambda _v: self._refresh())
+        form.addRow("统计窗口", self._window_s)
 
         self._jump_cm = QDoubleSpinBox(control_box)
         self._jump_cm.setRange(0.5, 200.0)
@@ -397,37 +331,25 @@ class _StabilityPage(QWidget):
         form.addRow("跳变阈值", self._jump_cm)
         controls.addLayout(form)
 
-        self._btn_start = QPushButton("开始测试", control_box)
-        self._btn_stop = QPushButton("停止并结算", control_box)
-        self._btn_clear = QPushButton("重置结果", control_box)
-        self._btn_start.clicked.connect(self._start)
-        self._btn_stop.clicked.connect(self._stop)
+        self._btn_clear = QPushButton("清空样本", control_box)
         self._btn_clear.clicked.connect(self._clear)
-        self._btn_stop.setEnabled(False)
-        controls.addWidget(self._btn_start)
-        controls.addWidget(self._btn_stop)
         controls.addWidget(self._btn_clear)
-        controls.addSpacing(18)
+        controls.addStretch(1)
 
-        self._summary = QLabel("未开始", control_box)
-        self._summary.setWordWrap(False)
-        self._summary.setStyleSheet("color:#69F0AE; font-size:17px; font-weight:bold;")
-        self._summary.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._summary.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        controls.addWidget(self._summary, 1)
+        self._summary = QLabel("未激活", control_box)
+        self._summary.setStyleSheet("color:#222; font-size:13px;")
+        controls.addWidget(self._summary)
         root.addWidget(control_box)
 
-        self._table = QTableWidget(len(self._ROWS), 9, self)
+        self._table = QTableWidget(len(self._ROWS), 7, self)
         self._table.setHorizontalHeaderLabels([
             "轴",
             "有效样本",
             "均值 cm",
-            "σ cm",
-            "摆动 cm",
-            "漂移 cm",
-            "min/max cm",
+            "标准差 cm",
+            "峰峰值 cm",
+            "最小 / 最大 cm",
             "跳变",
-            "判读",
         ])
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -441,64 +363,37 @@ class _StabilityPage(QWidget):
         )
         for r, (label, _idx) in enumerate(self._ROWS):
             self._table.setItem(r, 0, QTableWidgetItem(label))
-            for c in range(1, 9):
+            for c in range(1, 7):
                 item = QTableWidgetItem("--")
                 item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self._table.setItem(r, c, item)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.setColumnWidth(0, 72)
-        self._table.setColumnWidth(1, 78)
-        self._table.setColumnWidth(2, 78)
-        self._table.setColumnWidth(3, 68)
-        self._table.setColumnWidth(4, 76)
-        self._table.setColumnWidth(5, 76)
-        self._table.setColumnWidth(6, 96)
-        self._table.setColumnWidth(7, 56)
+        self._table.setColumnWidth(0, 90)
+        self._table.setColumnWidth(1, 90)
+        self._table.setColumnWidth(2, 110)
+        self._table.setColumnWidth(3, 110)
+        self._table.setColumnWidth(4, 110)
+        self._table.setColumnWidth(5, 150)
         root.addWidget(self._table, 1)
 
         note = QLabel(
-            "指标解释：抖动σ=坐标短时间噪声；最大摆动=测试期间最大值-最小值；"
-            "漂移=结束坐标-开始坐标；跳变=相邻两帧变化超过阈值。当前阶段只观测，不进入 PID 或控制输出。",
+            "说明：这里只统计 SLAM_VALID=1 且 cur_x/y/z 都不是 INVALID_S32 的样本；"
+            "当前阶段只做观测诊断，不进入 PID 或控制输出。",
             self,
         )
         note.setWordWrap(True)
-        note.setStyleSheet("color:#CFCFCF; font-size:13px;")
+        note.setStyleSheet("color:#9E9E9E; font-size:12px;")
         root.addWidget(note)
-        self._update_mode_help()
 
     def _clear(self) -> None:
-        self._running = False
-        self._done = False
-        self._t_start = None
         self._samples.clear()
-        self._btn_start.setEnabled(True)
-        self._btn_stop.setEnabled(False)
         self._refresh()
 
-    def _start(self) -> None:
-        self._samples.clear()
-        self._running = True
-        self._done = False
-        self._t_start = None
-        self._btn_start.setEnabled(False)
-        self._btn_stop.setEnabled(True)
-        self._refresh()
-
-    def _stop(self) -> None:
-        if not self._running:
-            return
-        self._running = False
-        self._done = True
-        self._btn_start.setEnabled(True)
-        self._btn_stop.setEnabled(False)
-        self._refresh()
-
-    def _update_mode_help(self) -> None:
-        idx = max(0, min(self._mode_combo.currentIndex(), len(self._TEST_MODES) - 1))
-        label, desc, ops = self._TEST_MODES[idx]
-        self._mode_help.setText(f"{label}\n{desc}\n{ops}")
-        self._refresh()
+    def _window_samples(self) -> list[RpiPositionMirrorSample]:
+        if not self._samples:
+            return []
+        cutoff = self._samples[-1].ts - float(self._window_s.value())
+        return [s for s in self._samples if s.ts >= cutoff]
 
     @staticmethod
     def _has_valid_cur(sample: RpiPositionMirrorSample) -> bool:
@@ -514,25 +409,15 @@ class _StabilityPage(QWidget):
             self._summary.setText("未激活")
             return
 
-        samples = list(self._samples)
-        valid = [s for s in samples if self._has_valid_cur(s)]
-        invalid_count = len(samples) - len(valid)
-        mirror_rate = self._sample_rate(samples)
-        f5_rate = self._f5_input_rate(samples)
-        rx_jump = self._rx_jump_count(samples)
-        elapsed = 0.0
-        if self._t_start is not None and samples:
-            elapsed = max(0.0, samples[-1].ts - self._t_start)
-        if self._running:
-            phase = f"测试 {elapsed:.1f}/{float(self._duration_s.value()):.1f}s"
-        elif self._done:
-            phase = "完成"
-        else:
-            phase = ""
-        prefix = f"{phase} | " if phase else ""
+        window = self._window_samples()
+        valid = [s for s in window if self._has_valid_cur(s)]
+        invalid_count = len(window) - len(valid)
+        rate = self._sample_rate(window)
+        rx_jump = self._rx_jump_count(window)
         self._summary.setText(
-            f"{prefix}样本 {len(samples)} | 有效 {len(valid)} | 无效 {invalid_count} | "
-            f"F5 {f5_rate:.1f}Hz / F6 {mirror_rate:.1f}Hz | 节流/漏显 {rx_jump}"
+            f"窗口 {float(self._window_s.value()):.1f}s | "
+            f"样本 {len(window)} | 有效 {len(valid)} | 无效 {invalid_count} | "
+            f"镜像 {rate:.1f}Hz | rx_cnt跳号/节流 {rx_jump}"
         )
 
         axis_values = [
@@ -567,19 +452,9 @@ class _StabilityPage(QWidget):
             prev = sample.rx_cnt
         return jumps
 
-    @staticmethod
-    def _f5_input_rate(samples: list[RpiPositionMirrorSample]) -> float:
-        if len(samples) < 2:
-            return 0.0
-        span = samples[-1].ts - samples[0].ts
-        delta = int(samples[-1].rx_cnt) - int(samples[0].rx_cnt)
-        if span <= 1e-6 or delta < 0:
-            return 0.0
-        return float(delta) / span
-
     def _axis_stats(self, values: list[int]) -> list[str]:
         if not values:
-            return ["0", "--", "--", "--", "--", "--", "--"]
+            return ["0", "--", "--", "--", "--", "--"]
         count = len(values)
         mean = sum(values) / count
         variance = sum((v - mean) * (v - mean) for v in values) / count
@@ -587,28 +462,18 @@ class _StabilityPage(QWidget):
         mn = min(values)
         mx = max(values)
         p2p = mx - mn
-        drift = values[-1] - values[0]
         jump_threshold = float(self._jump_cm.value())
         jumps = sum(
             1 for prev, cur in zip(values, values[1:])
             if abs(cur - prev) > jump_threshold
         )
-        verdict = "好"
-        if jumps > 0:
-            verdict = "有跳变"
-        elif p2p > 20.0 or abs(drift) > 15.0:
-            verdict = "漂移偏大"
-        elif p2p > 10.0 or std > 3.0:
-            verdict = "需观察"
         return [
             str(count),
             f"{mean:.1f}",
             f"{std:.2f}",
             f"{p2p:.1f}",
-            f"{drift:+.1f}",
             f"{mn} / {mx}",
             str(jumps),
-            verdict,
         ]
 
 
@@ -647,43 +512,11 @@ class _CalibrationPage(QWidget):
         self._refresh()
 
     def _build_ui(self) -> None:
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        scroll = QScrollArea(self)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        outer.addWidget(scroll, 1)
-
-        content = QWidget(scroll)
-        scroll.setWidget(content)
-        root = QVBoxLayout(content)
+        root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(8)
+        root.setSpacing(10)
 
-        guide_box = QGroupBox("操作引导", self)
-        guide_box.setStyleSheet(
-            "QGroupBox{background:#2B2B2B; color:#DCDCDC; font-size:12px;"
-            " border:1px solid #555; margin-top:8px; padding-top:8px;}"
-            "QGroupBox::title{subcontrol-origin: margin; left:8px; padding:0 4px;}"
-        )
-        guide_lay = QVBoxLayout(guide_box)
-        guide = QLabel(
-            "目标：用三次地面平移，判断树莓派发来的坐标与飞控坐标 X前 / Y左 是否对齐。\n"
-            "第 1 步：把机体放在黑线交点，机头对准现实“前方线”，点击“1 采样原点 O”。\n"
-            "第 2 步：沿机头前方黑线平移设定距离，停稳后点击“2 采样 +X 前进点”。\n"
-            "第 3 步：回到原点，沿机体左侧黑线平移设定距离，停稳后点击“3 采样 +Y 左移点”。\n"
-            "判断：夹角越接近 90° 越好；比例越接近 1 越好；方向性会提示是否需要换轴或取反。",
-            guide_box,
-        )
-        guide.setWordWrap(True)
-        guide.setStyleSheet("color:#F5F5F5; font-size:13px; line-height:125%;")
-        guide_lay.addWidget(guide)
-        root.addWidget(guide_box)
-
-        controls_box = QGroupBox("标定采样（按步骤点击）", self)
+        controls_box = QGroupBox("标定采样", self)
         controls_box.setStyleSheet("QGroupBox{color:#B0B0B0; font-size:12px;}")
         controls = QHBoxLayout(controls_box)
         controls.setSpacing(12)
@@ -709,10 +542,10 @@ class _CalibrationPage(QWidget):
         form.addRow("左移实测距离", self._left_cm)
         controls.addLayout(form)
 
-        btn_origin = QPushButton("1 原点 O", controls_box)
-        btn_forward = QPushButton("2 +X 前进", controls_box)
-        btn_left = QPushButton("3 +Y 左移", controls_box)
-        btn_clear = QPushButton("清空", controls_box)
+        btn_origin = QPushButton("采样原点 O", controls_box)
+        btn_forward = QPushButton("采样 +X 前进点", controls_box)
+        btn_left = QPushButton("采样 +Y 左移点", controls_box)
+        btn_clear = QPushButton("清空标定", controls_box)
         btn_origin.clicked.connect(lambda: self._capture(0))
         btn_forward.clicked.connect(lambda: self._capture(1))
         btn_left.clicked.connect(lambda: self._capture(2))
@@ -724,11 +557,8 @@ class _CalibrationPage(QWidget):
         controls.addStretch(1)
 
         self._live_label = QLabel("等待有效 0xF6", controls_box)
-        self._live_label.setWordWrap(True)
-        self._live_label.setMaximumWidth(360)
-        self._live_label.setStyleSheet("color:#69F0AE; font-size:20px; font-weight:bold;")
-        self._live_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._live_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self._live_label.setStyleSheet("color:#222; font-size:13px;")
+        self._live_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         controls.addWidget(self._live_label)
         root.addWidget(controls_box)
 
@@ -743,8 +573,7 @@ class _CalibrationPage(QWidget):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self._capture_table.setItem(row, col, item)
         self._capture_table.horizontalHeader().setStretchLastSection(True)
-        self._fit_table_to_rows(self._capture_table, len(self._CAPTURE_ROWS), 35)
-        root.addWidget(self._capture_table, 0)
+        root.addWidget(self._capture_table)
 
         self._diag_table = QTableWidget(len(self._DIAG_ROWS), 2, self)
         self._diag_table.setHorizontalHeaderLabels(["项目", "结果"])
@@ -754,8 +583,7 @@ class _CalibrationPage(QWidget):
             self._diag_table.setItem(row, 1, QTableWidgetItem("--"))
         self._diag_table.horizontalHeader().setStretchLastSection(True)
         self._diag_table.setColumnWidth(0, 120)
-        self._fit_table_to_rows(self._diag_table, len(self._DIAG_ROWS), 35)
-        root.addWidget(self._diag_table, 0)
+        root.addWidget(self._diag_table, 1)
 
         note = QLabel(
             "流程：机体放在原点并对准现实前方黑线，采样 O；沿前方黑线平移固定距离采样 +X；"
@@ -765,7 +593,6 @@ class _CalibrationPage(QWidget):
         note.setWordWrap(True)
         note.setStyleSheet("color:#9E9E9E; font-size:12px;")
         root.addWidget(note)
-        root.addStretch(1)
 
     @staticmethod
     def _setup_table(table: QTableWidget) -> None:
@@ -779,17 +606,6 @@ class _CalibrationPage(QWidget):
             "QTableWidget::item:alternate{background:#2B2B2B; color:#DCDCDC;}"
             "QHeaderView::section{background:#333; color:#DCDCDC; padding:4px;}"
         )
-
-    @staticmethod
-    def _fit_table_to_rows(table: QTableWidget, rows: int, row_height: int) -> None:
-        for row in range(rows):
-            table.setRowHeight(row, row_height)
-        header_h = max(table.horizontalHeader().sizeHint().height(), 30)
-        height = header_h + rows * row_height + 8
-        table.setMinimumHeight(height)
-        table.setMaximumHeight(height)
-        table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def _clear(self) -> None:
         self._points = [None, None, None]
@@ -817,18 +633,18 @@ class _CalibrationPage(QWidget):
         sample = self._latest
         if not self._active:
             self._live_label.setText("未激活")
-            self._live_label.setStyleSheet("color:#9E9E9E; font-size:20px; font-weight:bold;")
+            self._live_label.setStyleSheet("color:#555; font-size:13px;")
         elif sample is None:
             self._live_label.setText("等待有效 0xF6")
-            self._live_label.setStyleSheet("color:#FFCA28; font-size:20px; font-weight:bold;")
+            self._live_label.setStyleSheet("color:#F9A825; font-size:13px;")
         elif not self._valid_cur(sample):
             self._live_label.setText(f"当前 SLAM 无效 flags=0x{sample.flags:02X}")
-            self._live_label.setStyleSheet("color:#FF5252; font-size:20px; font-weight:bold;")
+            self._live_label.setStyleSheet("color:#C62828; font-size:13px;")
         else:
             self._live_label.setText(
                 f"当前 cur=({sample.cur_x_cm}, {sample.cur_y_cm}, {sample.cur_z_cm}) cm"
             )
-            self._live_label.setStyleSheet("color:#69F0AE; font-size:20px; font-weight:bold;")
+            self._live_label.setStyleSheet("color:#1B5E20; font-size:13px;")
 
         for row, point in enumerate(self._points):
             values = point if point is not None else ("--", "--", "--")

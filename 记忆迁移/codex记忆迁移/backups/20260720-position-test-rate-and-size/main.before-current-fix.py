@@ -111,26 +111,11 @@ class MainWindow(QMainWindow):
 
         # ---- 2. 恢复窗口几何 ----
         size = self._config.get("window_size", [1200, 800])
-        width, height = 1200, 800
         if isinstance(size, list) and len(size) == 2:
-            width, height = int(size[0]), int(size[1])
-        screen = QApplication.primaryScreen()
-        available = screen.availableGeometry() if screen is not None else None
-        if available is not None:
-            max_w = max(640, available.width() - 40)
-            max_h = max(480, available.height() - 60)
-            width = min(max(width, 900), max_w)
-            height = min(max(height, 600), max_h)
-        self.resize(width, height)
+            self.resize(int(size[0]), int(size[1]))
         pos = self._config.get("window_pos", None)
         if isinstance(pos, list) and len(pos) == 2:
             self.move(int(pos[0]), int(pos[1]))
-        if available is not None:
-            right = available.left() + available.width() - self.width()
-            bottom = available.top() + available.height() - self.height()
-            x = min(max(self.x(), available.left()), max(available.left(), right))
-            y = min(max(self.y(), available.top()), max(available.top(), bottom))
-            self.move(x, y)
 
         # ---- 3. UI 组装 ----
         self._connection_bar = ConnectionBar(self._config, self)
