@@ -533,7 +533,6 @@ class MainWindow(QMainWindow):
                 self._position_test_window = PositionTestWindow(self)
                 self._worker.frame_received.connect(self._position_test_window.on_frame)
                 self._central_stack.addWidget(self._position_test_window)
-            self._position_test_window.set_link_connected(self._connection_bar.is_connected)
             self._position_test_window.set_active(True)
             self._central_stack.setCurrentWidget(self._position_test_window)
             self._log.info("功能", "位置测试 已开启")
@@ -864,8 +863,6 @@ class MainWindow(QMainWindow):
         self._sb_conn.setText(f"● 已连接 {port_name}")
         self._sb_conn.setStyleSheet("color: #2E7D32; font-weight: bold;")
         self._command_panel.set_enabled_for_link(True)
-        if self._position_test_window is not None:
-            self._position_test_window.set_link_connected(True)
         self._alarm.info("串口", f"已连接到 {port_name}")
 
     @Slot(str)
@@ -874,8 +871,6 @@ class MainWindow(QMainWindow):
         self._sb_conn.setText("● 未连接")
         self._sb_conn.setStyleSheet("color: #888;")
         self._command_panel.set_enabled_for_link(False)
-        if self._position_test_window is not None:
-            self._position_test_window.set_link_connected(False)
         # 断开时取消所有挂起，避免无意义超时报警
         if self._ack.pending_count:
             self._log.info("回执", f"串口断开，取消 {self._ack.pending_count} 条挂起请求")

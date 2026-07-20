@@ -74,6 +74,4 @@ void CK_Back(u8 dest_addr, _ck_st *ck);
 void PAR_Back(u8 dest_addr, _par_st *par);
 // 发0xA0字符串信息帧至凌霄IMU（UART5路径）
 void String_Info_Send(u8 dest_addr, u8 color, const char *str);
-// 标记发送0xF6树莓派位置镜像调试帧（UART5->IMU->数传->GUI）
-void Rpi_Position_Mirror_Send(u8 dest_addr);
 #endif

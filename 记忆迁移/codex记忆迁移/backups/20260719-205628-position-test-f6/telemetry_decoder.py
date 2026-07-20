@@ -24,7 +24,6 @@ from gui.services.telemetry_models import (
     GenVelocitySample,
     HeightSample,
     ModuleStatusSample,
-    RpiPositionMirrorSample,
     VelocitySample,
 )
 # ---- 各帧 LEN 与解包格式（与官方手册对齐）----
@@ -38,7 +37,6 @@ _FMT_0x0E = "<BBBB"   # STA_G_VEL, STA_G_POS, STA_GPS, STA_ALT_ADD → LEN=4
 _FMT_0x32 = "<iii"    # POS_X/Y/Z (cm)，0x80000000 无效         → LEN=12
 _FMT_0x33 = "<hhh"    # SPEED_X/Y/Z (cm/s)，0x8000 无效         → LEN=6
 _FMT_0x34 = "<BHI"    # DIRECTION, ANGLE, DIST(cm)，0xFFFFFFFF 无效 → LEN=7
-_FMT_0xF6 = "<iiiiiiBIII"  # RPi镜像：cur/tar(s32 cm)+flags+rx/lenerr/ckerr
 
 # 通用传感器"数据无效"标志（官方手册）
 _INVALID_S32 = -2147483648    # 0x80000000（struct 按 s32 解出的值）
@@ -216,32 +214,4 @@ def decode_gen_distance(data: bytes, ts: Optional[float] = None) -> Optional[Gen
         angle=angle,
         distance_cm=dist,
         valid=(dist != _INVALID_U32),
-    )
-
-
-def decode_rpi_position_mirror(
-    data: bytes, ts: Optional[float] = None
-) -> Optional[RpiPositionMirrorSample]:
-    """解码 0xF6 树莓派位置镜像帧。
-
-    0xF6 由 STM32 将 UART2 收到的 0xF5 解析结果重新下发给 GUI；
-    该帧只用于位置测试显示，不改变飞控输出。
-    """
-    if len(data) != struct.calcsize(_FMT_0xF6):
-        return None
-    cur_x, cur_y, cur_z, tar_x, tar_y, tar_z, flags, rx_cnt, len_err, ck_err = struct.unpack(
-        _FMT_0xF6, data
-    )
-    return RpiPositionMirrorSample(
-        ts=ts if ts is not None else time.monotonic(),
-        cur_x_cm=cur_x,
-        cur_y_cm=cur_y,
-        cur_z_cm=cur_z,
-        tar_x_cm=tar_x,
-        tar_y_cm=tar_y,
-        tar_z_cm=tar_z,
-        flags=flags,
-        rx_cnt=rx_cnt,
-        len_err_cnt=len_err,
-        checksum_err_cnt=ck_err,
     )

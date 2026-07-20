@@ -736,29 +736,11 @@ void Uplink_Cmd_Tick(void)
     u8 idx;
     u8 color;
     u8 i;
-    static u8 f6_mirror_tick;
-    static u32 f6_last_rx_cnt;
 
     /* 限频计数 */
     if (s_echo_gap_cnt < 0xFF)
     {
         s_echo_gap_cnt++;
-    }
-
-    /* 位置测试GUI镜像：只把最近0xF5解析快照下发给数传，不接控制。 */
-    if (s_f5_has_frame)
-    {
-        if (f6_mirror_tick < 0xFF)
-        {
-            f6_mirror_tick++;
-        }
-        if (s_f5_snapshot.rx_cnt != f6_last_rx_cnt &&
-            f6_mirror_tick >= UPLINK_F6_MIRROR_TICK_GAP)
-        {
-            f6_mirror_tick = 0;
-            f6_last_rx_cnt = s_f5_snapshot.rx_cnt;
-            Rpi_Position_Mirror_Send(HW_ALL);
-        }
     }
 
     if (s_echo_kind == ECHO_KIND_NONE || s_echo_gap_cnt < ECHO_MIN_TICK_GAP)

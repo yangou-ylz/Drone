@@ -136,6 +136,35 @@ class GenDistanceSample:
     valid: bool
 
 
+@dataclass(frozen=True)
+class RpiPositionMirrorSample:
+    """0xF6 树莓派位置镜像帧（STM32解析0xF5后下发给GUI）。"""
+
+    ts: float
+    cur_x_cm: int
+    cur_y_cm: int
+    cur_z_cm: int
+    tar_x_cm: int
+    tar_y_cm: int
+    tar_z_cm: int
+    flags: int
+    rx_cnt: int
+    len_err_cnt: int
+    checksum_err_cnt: int
+
+    @property
+    def slam_valid(self) -> bool:
+        return bool(self.flags & 0x01)
+
+    @property
+    def target_valid(self) -> bool:
+        return bool(self.flags & 0x02)
+
+    @property
+    def visual_mode(self) -> bool:
+        return bool(self.flags & 0x04)
+
+
 
 @dataclass(frozen=True)
 class PathPoint:

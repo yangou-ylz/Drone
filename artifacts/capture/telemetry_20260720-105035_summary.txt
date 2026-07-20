@@ -1,0 +1,4 @@
+port=/dev/ttyACM0 baud=500000 duration=20.04s raw_bytes=152230 frames=13487
+CMD_COUNTS=0x01:1003 0x02:402 0x03:804 0x04:804 0x05:402 0x06:67 0x07:402 0x08:201 0x09:201 0x0D:67 0x0E:67 0x20:1003 0x30:100 0x40:100 0x41:201 0xFA:7663
+F6_COUNT=0 A0_COUNT=0
+jsonl=artifacts/capture/telemetry_20260720-105035.jsonl

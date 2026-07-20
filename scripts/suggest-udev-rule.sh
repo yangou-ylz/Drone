@@ -34,10 +34,9 @@ cat <<'EOF'
 
 If OpenOCD reports USB permission errors, confirm before applying a rule like:
 
-  sudo tee /etc/udev/rules.d/60-cmsis-dap-local.rules
+  sudo tee /etc/udev/rules.d/60-debug-probe-local.rules
   sudo udevadm control --reload-rules
   sudo udevadm trigger
 
 Do not apply rules blindly. Use the exact VID:PID from your DAP.
 EOF
-

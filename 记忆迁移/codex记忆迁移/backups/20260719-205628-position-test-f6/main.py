@@ -56,7 +56,6 @@ from gui.widgets.path_2d_view_widget import Path2DViewWidget  # noqa: E402
 from gui.widgets.numeric_panel_dock import NumericPanelDock  # noqa: E402
 from gui.widgets.flight_data_dock import FlightDataDock  # noqa: E402
 from gui.widgets.frame_monitor_dock import FrameMonitorWidget  # noqa: E402
-from gui.position_test.position_test_window import PositionTestWindow  # noqa: E402
 import gui.commands  # noqa: F401, E402  导入即注册所有命令
 
 # 功能 Dock 注册表：key = 配置键 / objectName 后缀；value = (菜单显示名, Dock 标题, Widget 工厂)
@@ -162,7 +161,6 @@ class MainWindow(QMainWindow):
         self._central_stack.addWidget(central)
         self._imu_test_window = None
         self._imu_data_hub = None
-        self._position_test_window = None
 
         # ---- 顶层容器：连接栏常驻顶部 + 下方可切换的中心 stack ----
         # 把连接栏从主页面内部提到最外层，使其跨所有功能页（IMU测试台/数据帧监视等）常驻可见，
@@ -465,12 +463,6 @@ class MainWindow(QMainWindow):
             m_feature.addAction(act_fm)
             self._feature_actions["frame_monitor"] = act_fm
 
-        # 树莓派位置测试（整屏中央视图，默认隐藏）
-        self._act_position_test = QAction("位置测试", self, checkable=True)
-        self._act_position_test.toggled.connect(self._on_toggle_position_test)
-        m_feature.addAction(self._act_position_test)
-        self._feature_actions["position_test"] = self._act_position_test
-
         # ----- IMU 测试台入口 -----
         m_feature.addSeparator()
         self._act_imu_test = QAction("IMU 测试台", self, checkable=True)
@@ -493,14 +485,6 @@ class MainWindow(QMainWindow):
                 act_fm.setChecked(False)
                 act_fm.blockSignals(False)
                 self._config.set("features.frame_monitor", False)
-            # 互斥：关闭位置测试
-            act_pos = self._feature_actions.get("position_test")
-            if act_pos and act_pos.isChecked():
-                act_pos.blockSignals(True)
-                act_pos.setChecked(False)
-                act_pos.blockSignals(False)
-            if self._position_test_window is not None:
-                self._position_test_window.set_active(False)
             if self._imu_test_window is None:
                 from gui.imu_test.data_hub import ImuDataHub
                 from gui.imu_test.imu_test_window import ImuTestWindow
@@ -513,36 +497,6 @@ class MainWindow(QMainWindow):
             self._central_stack.setCurrentWidget(self._imu_test_window)
         else:
             self._central_stack.setCurrentIndex(0)
-
-    def _on_toggle_position_test(self, checked: bool) -> None:
-        """切换主界面 / 位置测试页（树莓派0xF5镜像0xF6，懒加载）。"""
-        if checked:
-            # 互斥：关闭数据帧监视
-            act_fm = self._feature_actions.get("frame_monitor")
-            if act_fm and act_fm.isChecked():
-                act_fm.blockSignals(True)
-                act_fm.setChecked(False)
-                act_fm.blockSignals(False)
-                self._config.set("features.frame_monitor", False)
-            # 互斥：关闭 IMU 测试台
-            if getattr(self, "_act_imu_test", None) and self._act_imu_test.isChecked():
-                self._act_imu_test.blockSignals(True)
-                self._act_imu_test.setChecked(False)
-                self._act_imu_test.blockSignals(False)
-            if self._position_test_window is None:
-                self._position_test_window = PositionTestWindow(self)
-                self._worker.frame_received.connect(self._position_test_window.on_frame)
-                self._central_stack.addWidget(self._position_test_window)
-            self._position_test_window.set_link_connected(self._connection_bar.is_connected)
-            self._position_test_window.set_active(True)
-            self._central_stack.setCurrentWidget(self._position_test_window)
-            self._log.info("功能", "位置测试 已开启")
-        else:
-            if self._position_test_window is not None:
-                self._position_test_window.set_active(False)
-            if self._central_stack.currentWidget() is self._position_test_window:
-                self._central_stack.setCurrentIndex(0)
-            self._log.info("功能", "位置测试 已关闭")
 
     def _send_raw_frame(self, frame: bytes) -> bool:
         """发送整帧原始字节（供 IMU 测试台设备校准使用）。
@@ -631,14 +585,6 @@ class MainWindow(QMainWindow):
                 self._act_imu_test.blockSignals(True)
                 self._act_imu_test.setChecked(False)
                 self._act_imu_test.blockSignals(False)
-            # 互斥：关闭位置测试
-            act_pos = self._feature_actions.get("position_test")
-            if act_pos and act_pos.isChecked():
-                act_pos.blockSignals(True)
-                act_pos.setChecked(False)
-                act_pos.blockSignals(False)
-            if self._position_test_window is not None:
-                self._position_test_window.set_active(False)
             self._central_stack.setCurrentWidget(self._frame_monitor_widget)
             self._log.info("功能", "数据帧监视 已开启")
         else:
@@ -864,8 +810,6 @@ class MainWindow(QMainWindow):
         self._sb_conn.setText(f"● 已连接 {port_name}")
         self._sb_conn.setStyleSheet("color: #2E7D32; font-weight: bold;")
         self._command_panel.set_enabled_for_link(True)
-        if self._position_test_window is not None:
-            self._position_test_window.set_link_connected(True)
         self._alarm.info("串口", f"已连接到 {port_name}")
 
     @Slot(str)
@@ -874,8 +818,6 @@ class MainWindow(QMainWindow):
         self._sb_conn.setText("● 未连接")
         self._sb_conn.setStyleSheet("color: #888;")
         self._command_panel.set_enabled_for_link(False)
-        if self._position_test_window is not None:
-            self._position_test_window.set_link_connected(False)
         # 断开时取消所有挂起，避免无意义超时报警
         if self._ack.pending_count:
             self._log.info("回执", f"串口断开，取消 {self._ack.pending_count} 条挂起请求")

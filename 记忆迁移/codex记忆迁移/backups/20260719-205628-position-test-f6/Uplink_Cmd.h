@@ -68,13 +68,6 @@
 #define UPLINK_F5_TOTAL_LEN 31
 #define UPLINK_F5_INVALID_S32 (-2147483647L - 1L)
 
-/* 0xF6：STM32 -> IMU -> 数传 -> GUI 的位置镜像调试帧。
- * 不改变树莓派已跑通的 0xF5 上行帧，只把 STM32 解析后的快照按标准匿名
- * 自定义帧下发给 GUI。DATA = cur/tar(6*s32 cm) + flags + 3个u32计数。 */
-#define UPLINK_F6_CMD 0xF6
-#define UPLINK_F6_DATA_LEN 37
-#define UPLINK_F6_MIRROR_TICK_GAP 5u /* Uplink_Cmd_Tick=50Hz，5tick约10Hz */
-
 #define UPLINK_F5_FLAG_SLAM_VALID 0x01
 #define UPLINK_F5_FLAG_TARGET_VALID 0x02
 #define UPLINK_F5_FLAG_VISUAL_MODE 0x04

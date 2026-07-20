@@ -1,0 +1,10 @@
+{
+  "waiting_label": "等待 0xF6",
+  "waiting_rx_label": "--",
+  "after_inject_label": "实时",
+  "after_inject_rx_label": "411",
+  "after_inject_cur_x": "84",
+  "after_inject_cur_y": "79",
+  "shot_wait": "/home/ubuntu22/stm32/ANO_LX_FC/artifacts/gui/position_test_waiting.png",
+  "shot_injected": "/home/ubuntu22/stm32/ANO_LX_FC/artifacts/gui/position_test_injected_f6.png"
+}

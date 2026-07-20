@@ -34,8 +34,6 @@ from ano_protocol import (  # noqa: E402  (path 注入后再 import)
     calc_checksum,
 )
 
-CMD_RPI_POSITION_MIRROR = 0xF6
-
 __all__ = [
     "FRAME_HEAD",
     "ADDR_BROADCAST",
@@ -52,5 +50,4 @@ __all__ = [
     "build_f2_param",
     "build_f3_xyz",
     "calc_checksum",
-    "CMD_RPI_POSITION_MIRROR",
 ]

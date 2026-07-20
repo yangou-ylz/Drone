@@ -28,25 +28,9 @@
 u8 send_buffer[50]; // 发送数据缓存
 _dt_st dt;
 
-	// 0xA0帧内容暂存，由String_Info_Send写入，由Add_Send_Data在发送时读取
+// 0xA0帧内容暂存，由String_Info_Send写入，由Add_Send_Data在发送时读取
 static u8 s_log_color;
 static char s_log_str[STRING_INFO_MAX_LEN + 1];
-
-static void add_s32_le(u8 *_cnt, u8 send_buffer[], s32 val)
-{
-	send_buffer[(*_cnt)++] = BYTE0(val);
-	send_buffer[(*_cnt)++] = BYTE1(val);
-	send_buffer[(*_cnt)++] = BYTE2(val);
-	send_buffer[(*_cnt)++] = BYTE3(val);
-}
-
-static void add_u32_le(u8 *_cnt, u8 send_buffer[], u32 val)
-{
-	send_buffer[(*_cnt)++] = BYTE0(val);
-	send_buffer[(*_cnt)++] = BYTE1(val);
-	send_buffer[(*_cnt)++] = BYTE2(val);
-	send_buffer[(*_cnt)++] = BYTE3(val);
-}
 
 // 将 u8 转为两位大写十六进制 ASCII，写入 buf[0]和buf[1]
 static void u8_to_hex(u8 val, char *buf)
@@ -98,10 +82,6 @@ void ANO_DT_Init(void)
 	dt.fun[0xa0].D_Addr = 0xff;
 	dt.fun[0xa0].fre_ms = 0; // 0 由外部触发
 	dt.fun[0xa0].time_cnt_ms = 0;
-	// 0xF6：树莓派位置镜像调试帧（STM32解析0xF5后下发给GUI）
-	dt.fun[UPLINK_F6_CMD].D_Addr = 0xff;
-	dt.fun[UPLINK_F6_CMD].fre_ms = 0;
-	dt.fun[UPLINK_F6_CMD].time_cnt_ms = 0;
 }
 
 // 数据发送接口
@@ -494,25 +474,6 @@ static void Add_Send_Data(u8 frame_num, u8 *_cnt, u8 send_buffer[])
 		}
 	}
 	break;
-	case UPLINK_F6_CMD: // 树莓派位置镜像帧，供GUI位置测试解析
-	{
-		_uplink_f5_snapshot_st snap;
-		if (Uplink_F5_GetSnapshot(&snap) == 0)
-		{
-			break;
-		}
-		add_s32_le(_cnt, send_buffer, snap.cur_x_cm);
-		add_s32_le(_cnt, send_buffer, snap.cur_y_cm);
-		add_s32_le(_cnt, send_buffer, snap.cur_z_cm);
-		add_s32_le(_cnt, send_buffer, snap.tar_x_cm);
-		add_s32_le(_cnt, send_buffer, snap.tar_y_cm);
-		add_s32_le(_cnt, send_buffer, snap.tar_z_cm);
-		send_buffer[(*_cnt)++] = snap.flags;
-		add_u32_le(_cnt, send_buffer, snap.rx_cnt);
-		add_u32_le(_cnt, send_buffer, snap.len_err_cnt);
-		add_u32_le(_cnt, send_buffer, snap.checksum_err_cnt);
-	}
-	break;
 	default:
 		break;
 	}
@@ -621,12 +582,6 @@ void String_Info_Send(u8 dest_addr, u8 color, const char *str)
 	dt.fun[0xa0].WTS = 1;
 }
 
-void Rpi_Position_Mirror_Send(u8 dest_addr)
-{
-	dt.fun[UPLINK_F6_CMD].D_Addr = dest_addr;
-	dt.fun[UPLINK_F6_CMD].WTS = 1;
-}
-
 // 若指令没发送成功，会持续重新发送，间隔50ms。
 static u8 repeat_cnt;
 static inline void CK_Back_Check()
@@ -675,7 +630,6 @@ void ANO_LX_Data_Exchange_Task(float dT_s)
 	Check_To_Send(0xe2);
 	Check_To_Send(0x0d);
 	Check_To_Send(0xa0);
-	Check_To_Send(UPLINK_F6_CMD);
 }
 
 //===================================================================
