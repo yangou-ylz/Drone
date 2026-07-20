@@ -67,7 +67,7 @@ run_step() {
 
   run_step "DAP visibility, non-fatal" bash -c '
     lsusb
-    if lsusb | rg -i "cmsis|dap|debug|hid|arm|st-link|stlink|wch|j-link|jlink"; then
+    if lsusb | grep -Ei "cmsis|dap|debug|hid|arm|st-link|stlink|wch|j-link|jlink"; then
       printf "\nDAP/debug-probe candidate visible.\n"
     else
       printf "\nNo obvious DAP/CMSIS-DAP/debug probe currently visible. Hardware validation remains pending.\n"
@@ -79,4 +79,3 @@ run_step() {
 } 2>&1 | tee "${LOG_FILE}"
 
 printf '\nSaved local environment verification log: %s\n' "${LOG_FILE}"
-

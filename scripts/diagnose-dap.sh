@@ -41,11 +41,11 @@ LOG_FILE="${LOG_DIR}/dap-diagnostics-$(date +%Y%m%d-%H%M%S).log"
   printf '\n'
 
   printf '== DAP Keyword Scan ==\n'
-  lsusb | rg -i 'cmsis|dap|debug|hid|arm|st-link|stlink|wch|j-link|jlink' || true
+  lsusb | grep -Ei 'cmsis|dap|debug|hid|arm|st-link|stlink|wch|j-link|jlink' || true
   printf '\n'
 
   printf '== Kernel Messages: recent USB lines ==\n'
-  dmesg --ctime 2>/dev/null | rg -i 'usb|hid|cmsis|dap|stlink|jlink|debug' | tail -80 || true
+  dmesg --ctime 2>/dev/null | grep -Ei 'usb|hid|cmsis|dap|stlink|jlink|debug' | tail -80 || true
   printf '\n'
 
   printf '== OpenOCD Config Parse ==\n'
@@ -61,4 +61,3 @@ LOG_FILE="${LOG_DIR}/dap-diagnostics-$(date +%Y%m%d-%H%M%S).log"
 } | tee "${LOG_FILE}"
 
 printf '\nSaved diagnostic log: %s\n' "${LOG_FILE}"
-

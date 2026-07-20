@@ -9,7 +9,7 @@ cd "${PROJECT_ROOT}"
 
 printf 'This script only prints suggested udev rules. It does not write /etc/udev/rules.d and does not use sudo.\n\n'
 
-mapfile -t DEVICES < <(lsusb | rg -i 'cmsis|dap|debug|hid|arm|st-link|stlink|wch|j-link|jlink' || true)
+mapfile -t DEVICES < <(lsusb | grep -Ei 'cmsis|dap|debug|hid|arm|st-link|stlink|wch|j-link|jlink' || true)
 
 if [[ "${#DEVICES[@]}" -eq 0 ]]; then
   printf 'No obvious DAP/CMSIS-DAP/debug probe found in lsusb.\n'

@@ -9,9 +9,8 @@ printf 'USB devices:\n'
 lsusb
 
 printf '\nDAP/debug-probe keyword scan:\n'
-if lsusb | rg -i 'cmsis|dap|debug|hid|arm|st-link|stlink|wch|j-link|jlink'; then
+if lsusb | grep -Ei 'cmsis|dap|debug|hid|arm|st-link|stlink|wch|j-link|jlink'; then
   printf '\nA debug-probe-like USB device is visible above.\n'
 else
   printf '\nNo obvious DAP/CMSIS-DAP/debug probe is currently visible.\n'
 fi
-
