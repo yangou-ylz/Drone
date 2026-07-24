@@ -25,7 +25,7 @@ typedef struct
 	//
 	u8 direction;
 	u16 angle_100;
-	u32 distance_cm;
+	s32 distance_cm;
 
 } __attribute__((__packed__)) _general_dis_st;
 

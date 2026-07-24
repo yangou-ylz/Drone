@@ -8,8 +8,10 @@ Panels:
         - /LaserScan1
         - /Path1
         - /Path1/Topic1
+        - /ParticleCloud1
+        - /ParticleCloud1/Topic1
       Splitter Ratio: 0.5
-    Tree Height: 748
+    Tree Height: 1206
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -204,6 +206,22 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /amcl_pose
       Value: true
+    - Alpha: 1
+      Class: nav2_rviz_plugins/ParticleCloud
+      Color: 0; 255; 0
+      Enabled: true
+      Max Arrow Length: 0.6000000238418579
+      Min Arrow Length: 0.20000000298023224
+      Name: ParticleCloud
+      Shape: Arrow (Flat)
+      Topic:
+        Depth: 6
+        Durability Policy: System Default
+        Filter size: 10
+        History Policy: System Default
+        Reliability Policy: Best Effort
+        Value: /particle_cloud
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -250,35 +268,35 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 15.314682006835938
+      Distance: 9.50747299194336
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 0.346047967672348
+        Y: 0.08866924792528152
+        Z: -0.015833131968975067
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.050202488899231
+      Pitch: 1.145202398300171
       Target Frame: map
       Value: Orbit (rviz_default_plugins)
-      Yaw: 1.9149912595748901
+      Yaw: 1.7399914264678955
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1014
+  Height: 1472
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000003810000035afc0200000002fb000000100044006900730070006c006100790073010000006e0000035a0000018200fffffffb0000000a005600690065007700730000000252000001760000013200ffffff0000031d0000035a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000001000000000000038100000524fc0200000002fb000000100044006900730070006c006100790073010000006e000005240000018200fffffffb0000000a005600690065007700730000000252000001760000013200ffffff000005ff0000052400000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1706
-  X: 240
-  Y: 178
+  Width: 2444
+  X: 116
+  Y: 54

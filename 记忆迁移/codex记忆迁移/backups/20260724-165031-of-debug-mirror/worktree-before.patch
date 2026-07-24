@@ -1,0 +1,505 @@
+diff --git a/FcSrc/ANO_LX.c b/FcSrc/ANO_LX.c
+index 10edc4d7..897c7cc0 100644
+--- a/FcSrc/ANO_LX.c
++++ b/FcSrc/ANO_LX.c
+@@ -178,7 +178,7 @@ static inline void RC_Data_Task(float dT_s)
+ 			else
+ 			{
+ 				rt_tar.st_data.vel_x = -tmp_ch_dz[ch_1_rol] * 0.00238f * MAX_VELOCITY; // 实测vx方向与摇杆相反，取负反向
+-				rt_tar.st_data.vel_y = tmp_ch_dz[ch_2_pit] * 0.00238f * MAX_VELOCITY;
++				rt_tar.st_data.vel_y = -tmp_ch_dz[ch_2_pit] * 0.00238f * MAX_VELOCITY; // 定点模式CH2实测方向相反，取负修正
+ 			}
+ 			rt_tar.st_data.rol = 0;
+ 			rt_tar.st_data.pit = 0;
+diff --git a/gui/config.json b/gui/config.json
+index a341c29c..b9e46fe4 100644
+--- a/gui/config.json
++++ b/gui/config.json
+@@ -275,11 +275,11 @@
+   },
+   "path_viz_2d.xz.settings": {},
+   "path_viz_2d.yz.settings": {},
+-  "ui.main_window_state": "AAAA/wAAAAD9AAAAAQAAAAEAAAAAAAAAAPwCAAAAA/wAAAAA/////wAAAAAA/////AEAAAAE+wAAADwARgBlAGEAdAB1AHIAZQBEAG8AYwBrAF8AcABhAHQAaABfAHYAaQBzAHUAYQBsAGkAegBhAHQAaQBvAG4AAAAAAP////8AAABQAP////sAAABCAEYAZQBhAHQAdQByAGUARABvAGMAawBfAHAAYQB0AGgAXwB2AGkAcwB1AGEAbABpAHoAYQB0AGkAbwBuAF8AeAB5AAAAAAD/////AAAAlgD////7AAAAQgBGAGUAYQB0AHUAcgBlAEQAbwBjAGsAXwBwAGEAdABoAF8AdgBpAHMAdQBhAGwAaQB6AGEAdABpAG8AbgBfAHgAegAAAAAA/////wAAAJUA////+wAAAEIARgBlAGEAdAB1AHIAZQBEAG8AYwBrAF8AcABhAHQAaABfAHYAaQBzAHUAYQBsAGkAegBhAHQAaQBvAG4AXwB5AHoAAAAAAP////8AAACVAP////sAAAAgAE4AdQBtAGUAcgBpAGMAUABhAG4AZQBsAEQAbwBjAGsAAAAAAP////8AAAGyAP////sAAAAcAEYAbABpAGcAaAB0AEQAYQB0AGEARABvAGMAawAAAAAA/////wAAAjEA////AAAExgAAAqoAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
++  "ui.main_window_state": "AAAA/wAAAAD9AAAAAQAAAAEAAAFZAAACqvwCAAAAA/wAAAAbAAACqgAAAAAA/////AEAAAAE+wAAADwARgBlAGEAdAB1AHIAZQBEAG8AYwBrAF8AcABhAHQAaABfAHYAaQBzAHUAYQBsAGkAegBhAHQAaQBvAG4IAAACuwAAAgsAAABQAP////sAAABCAEYAZQBhAHQAdQByAGUARABvAGMAawBfAHAAYQB0AGgAXwB2AGkAcwB1AGEAbABpAHoAYQB0AGkAbwBuAF8AeAB5AAAAAAD/////AAAAlgD////7AAAAQgBGAGUAYQB0AHUAcgBlAEQAbwBjAGsAXwBwAGEAdABoAF8AdgBpAHMAdQBhAGwAaQB6AGEAdABpAG8AbgBfAHgAegAAAAAA/////wAAAJUA////+wAAAEIARgBlAGEAdAB1AHIAZQBEAG8AYwBrAF8AcABhAHQAaABfAHYAaQBzAHUAYQBsAGkAegBhAHQAaQBvAG4AXwB5AHoAAAAAAP////8AAACVAP////sAAAAgAE4AdQBtAGUAcgBpAGMAUABhAG4AZQBsAEQAbwBjAGsIAAAAGwAAAqoAAAGyAP////sAAAAcAEYAbABpAGcAaAB0AEQAYQB0AGEARABvAGMAawEAAAAbAAACqgAAAmkA////AAADZwAAAqoAAAAEAAAABAAAAAgAAAAI/AAAAAA=",
+   "path_viz.hud.settings": {},
+   "features.numeric_panel": false,
+   "features.flight_data": false,
+-  "features.frame_monitor": false,
++  "features.frame_monitor": true,
+   "splitter_sizes": [
+     241,
+     387
+diff --git a/gui/services/frame_recorder.py b/gui/services/frame_recorder.py
+index 123463c2..65c88ebd 100644
+--- a/gui/services/frame_recorder.py
++++ b/gui/services/frame_recorder.py
+@@ -2,7 +2,8 @@
+ """P5.5 传感器帧记录器：把入站状态帧落盘为 JSONL，便于离线/AI 诊断。
+ 
+ 设计：
+-- 白名单仅"状态/传感器"类帧：0x01/0x02/0x03/0x04/0x05/0x06/0x07/0x08/0x0E
++- 白名单仅"状态/传感器"类帧：
++  0x01/0x02/0x03/0x04/0x05/0x06/0x07/0x08/0x0D/0x0E/0x32/0x33/0x34
+   显式排除：0x41 实时控制、0xE0/0xE2 命令回执、0xA0 字符串日志等
+ - 每条日志一行 JSON（JSONL），既人类可读也方便 `json.loads` 批量解析
+ - 帧体除"已知字段解码"外，永远附带 `hex` 原始数据 → 解码错也能复盘
+@@ -12,7 +13,7 @@
+ 
+ 依赖：
+ - gui.io.protocol.Frame：cmd / data / addr
+-- gui.services.telemetry_decoder：已有 0x03/0x04/0x05/0x07 decoder（直接复用，保证解码语义一致）
++- gui.services.telemetry_decoder：已有 0x03/0x04/0x05/0x07 等 decoder（直接复用，保证解码语义一致）
+ 
+ 不做的事（避免范围爆炸）：
+ - 不解析命令/回执帧（不在传感器范畴）
+@@ -31,23 +32,31 @@ from typing import Any, Dict, Optional
+ from PySide6.QtCore import QObject, Signal
+ 
+ from gui.io.protocol import Frame
+-from gui.services.telemetry_decoder import (
+-    decode_attitude_euler,
+-    decode_attitude_quat,
+-    decode_height,
+-    decode_velocity,
+-)
++from gui.services.telemetry_decoder import (
++    decode_attitude_euler,
++    decode_attitude_quat,
++    decode_battery,
++    decode_gen_distance,
++    decode_gen_position,
++    decode_gen_velocity,
++    decode_height,
++    decode_velocity,
++)
+ 
+ 
+-# 白名单：状态/传感器帧
+-RECORD_CMDS = frozenset({0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0E})
++# 白名单：状态/传感器帧。包含电池和通用外部传感器，便于和官方上位机对齐诊断。
++RECORD_CMDS = frozenset({
++    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
++    0x0D, 0x0E, 0x32, 0x33, 0x34,
++})
+ 
+ # 字段解码格式（与 .github/instructions/lingxiao-protocol.instructions.md 对齐）
+ _FMT_0x01 = "<hhhhhhB"   # ACC_X/Y/Z + GYR_X/Y/Z + SHOCK_STA → LEN=13
+ _FMT_0x02 = "<hhhihBB"   # MAG_X/Y/Z + ALT_BAR + TMP + BAR_STA + MAG_STA → LEN=14
+-_FMT_0x06 = "<BBBBB"     # MODE/LOCKED/CID/CMD0/CMD1 → LEN=5
+-_FMT_0x08 = "<ii"        # POS_X / POS_Y (cm) → LEN=8
+-_FMT_0x0E = "<BBBB"      # STA_G_VEL/G_POS/GPS/ALT_ADD → LEN=4
++_FMT_0x06 = "<BBBBB"     # MODE/LOCKED/CID/CMD0/CMD1 → LEN=5
++_FMT_0x08 = "<ii"        # POS_X / POS_Y (cm) → LEN=8
++_FMT_0x0D = "<HH"        # VOLTAGE/CURRENT ×100 → LEN=4
++_FMT_0x0E = "<BBBB"      # STA_G_VEL/G_POS/GPS/ALT_ADD → LEN=4
+ 
+ 
+ def _decode_fields(cmd: int, data: bytes) -> Optional[Dict[str, Any]]:
+@@ -111,17 +120,62 @@ def _decode_fields(cmd: int, data: bytes) -> Optional[Dict[str, Any]]:
+             return {
+                 "vx_cmps": s.vx_cmps, "vy_cmps": s.vy_cmps, "vz_cmps": s.vz_cmps,
+             }
+-        if cmd == 0x08 and len(data) == struct.calcsize(_FMT_0x08):
+-            px, py = struct.unpack(_FMT_0x08, data)
+-            return {"pos_x_cm": px, "pos_y_cm": py}
+-        if cmd == 0x0E and len(data) == struct.calcsize(_FMT_0x0E):
+-            g_vel, g_pos, gps, alt_add = struct.unpack(_FMT_0x0E, data)
+-            return {
++        if cmd == 0x08 and len(data) == struct.calcsize(_FMT_0x08):
++            px, py = struct.unpack(_FMT_0x08, data)
++            return {"pos_x_cm": px, "pos_y_cm": py}
++        if cmd == 0x0D:
++            s = decode_battery(data)
++            if s is None:
++                return None
++            raw_v, raw_i = struct.unpack(_FMT_0x0D, data)
++            return {
++                "voltage_v": s.voltage_v,
++                "current_a": s.current_a,
++                "raw_voltage_x100": raw_v,
++                "raw_current_x100": raw_i,
++            }
++        if cmd == 0x0E and len(data) == struct.calcsize(_FMT_0x0E):
++            g_vel, g_pos, gps, alt_add = struct.unpack(_FMT_0x0E, data)
++            return {
+                 "sta_g_vel": g_vel,     # 0=无数据 / 1=有数据但不可用 / 2=正常
+                 "sta_g_pos": g_pos,
+-                "sta_gps": gps,
+-                "sta_alt_add": alt_add,
+-            }
++                "sta_gps": gps,
++                "sta_alt_add": alt_add,
++            }
++        if cmd == 0x32:
++            s = decode_gen_position(data)
++            if s is None:
++                return None
++            return {
++                "pos_x_cm": s.x_cm,
++                "pos_y_cm": s.y_cm,
++                "pos_z_cm": s.z_cm,
++                "valid_x": s.valid_x,
++                "valid_y": s.valid_y,
++                "valid_z": s.valid_z,
++            }
++        if cmd == 0x33:
++            s = decode_gen_velocity(data)
++            if s is None:
++                return None
++            return {
++                "vel_x_cmps": s.vx_cmps,
++                "vel_y_cmps": s.vy_cmps,
++                "vel_z_cmps": s.vz_cmps,
++                "valid_x": s.valid_x,
++                "valid_y": s.valid_y,
++                "valid_z": s.valid_z,
++            }
++        if cmd == 0x34:
++            s = decode_gen_distance(data)
++            if s is None:
++                return None
++            return {
++                "direction": s.direction,
++                "angle": s.angle,
++                "distance_cm": s.distance_cm,
++                "valid": s.valid,
++            }
+     except struct.error:
+         return None
+     return None
+diff --git a/gui/widgets/flight_data_dock.py b/gui/widgets/flight_data_dock.py
+index 148e541d..58a8732d 100644
+--- a/gui/widgets/flight_data_dock.py
++++ b/gui/widgets/flight_data_dock.py
+@@ -9,7 +9,7 @@
+ 
+ 设计约束：
+ - 纯显示 Dock，订阅 TelemetryBus 的 typed 样本信号，自身不解码
+-- 每类数据带"最近更新时刻"，超时(默认2.5s)自动置为 NO / 灰显
++- 每类数据带"最近更新时刻"，状态类数据保持最后一次真实状态，不用超时误判成无效
+ - 配色沿用暗色主题，与数字面板风格一致
+ """
+ from __future__ import annotations
+@@ -34,8 +34,9 @@ _MODE_NAMES = {0: "自稳", 1: "定高", 2: "定点", 3: "程控"}
+ _STA_NAMES = {0: "无数据", 1: "不可用", 2: "正常", 3: "良好"}
+ _STA_COLORS = {0: "#888888", 1: "#FF9800", 2: "#4CAF50", 3: "#00E5FF"}
+ 
+-# 数据超时阈值（秒）：超过则显示 NO / 灰显
++# 数据超时阈值（秒）：数值型数据超过则灰显；状态型数据只显示帧龄，不覆盖最后状态。
+ _STALE_S = 2.5
++_SLOW_STALE_S = 10.0
+ 
+ 
+ class _ValueLabel(QLabel):
+@@ -48,10 +49,12 @@ class _ValueLabel(QLabel):
+             "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
+         )
+         self._ts: float = 0.0
++        self._last_text: str = "NO"
+         self.set_no()
+ 
+     def set_no(self) -> None:
+         self.setText("NO")
++        self._last_text = "NO"
+         self.setStyleSheet(
+             "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
+             " color: #777777;"
+@@ -59,6 +62,7 @@ class _ValueLabel(QLabel):
+         self._ts = 0.0
+ 
+     def set_value(self, text: str, color: str = "#E0E0E0") -> None:
++        self._last_text = text
+         self.setText(text)
+         self.setStyleSheet(
+             "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
+@@ -66,9 +70,86 @@ class _ValueLabel(QLabel):
+         )
+         self._ts = time.monotonic()
+ 
+-    def check_stale(self, now: float) -> None:
+-        if self._ts > 0.0 and (now - self._ts) > _STALE_S:
++    def mark_stale(self) -> None:
++        if self._ts <= 0.0:
+             self.set_no()
++            return
++        self.setText(f"{self._last_text} 旧")
++        self.setStyleSheet(
++            "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
++            " color: #9E9E9E;"
++        )
++
++    def check_stale(self, now: float, stale_s: float = _STALE_S, clear: bool = True) -> None:
++        if self._ts > 0.0 and (now - self._ts) > stale_s:
++            if clear:
++                self.set_no()
++            else:
++                self.mark_stale()
++
++
++class _MetaLabel(QLabel):
++    """小号诊断标签：显示帧计数、帧龄和原始字段，避免把旧值误当实时值。"""
++
++    def __init__(self, parent: QWidget | None = None) -> None:
++        super().__init__("未收到", parent)
++        self.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
++        self.setStyleSheet(
++            "font-family: Consolas, 'Courier New', monospace; font-size: 11px; color:#888;"
++        )
++        self._prefix = "未收到"
++        self._ts = 0.0
++        self._count = 0
++
++    def set_meta(self, prefix: str, ts: float, count: int) -> None:
++        self._prefix = prefix
++        self._ts = ts
++        self._count = count
++        self.refresh(time.monotonic())
++
++    def refresh(self, now: float) -> None:
++        if self._ts <= 0.0:
++            self.setText("未收到")
++            self.setStyleSheet(
++                "font-family: Consolas, 'Courier New', monospace; font-size: 11px; color:#888;"
++            )
++            return
++        age = max(0.0, now - self._ts)
++        color = "#9E9E9E" if age > _SLOW_STALE_S else "#8BC34A"
++        self.setStyleSheet(
++            "font-family: Consolas, 'Courier New', monospace; font-size: 11px;"
++            f" color:{color};"
++        )
++        self.setText(f"{self._prefix} | #{self._count} | {age:.1f}s前")
++
++    def check_stale(self, now: float) -> None:
++        self.refresh(now)
++
++
++class _SensorValueLabel(_ValueLabel):
++    """外部传感器数值行：有官方状态正常时，短时无数据不直接显示无效。"""
++
++    def __init__(self, parent: QWidget | None = None) -> None:
++        super().__init__(parent)
++        self._status = 0
++
++    def set_status(self, status: int) -> None:
++        self._status = int(status)
++
++    def check_stale(self, now: float, stale_s: float = _STALE_S, clear: bool = True) -> None:
++        if self._ts <= 0.0:
++            if self._status >= 2:
++                self.setText("等待数据帧")
++                self.setStyleSheet(
++                    "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
++                    " color:#9E9E9E;"
++                )
++            return
++        if now - self._ts > stale_s:
++            if self._status >= 2:
++                self.mark_stale()
++            else:
++                self.set_no()
+ 
+ 
+ class FlightDataDock(QDockWidget):
+@@ -84,6 +165,8 @@ class FlightDataDock(QDockWidget):
+         self._mod_g_pos = 0
+         self._mod_alt_add = 0
+         self._mod_ts = 0.0
++        self._bat_count = 0
++        self._mod_count = 0
+ 
+         body = QWidget()
+         vbox = QVBoxLayout(body)
+@@ -98,10 +181,12 @@ class FlightDataDock(QDockWidget):
+         self._lbl_lock = _ValueLabel(g1)
+         self._lbl_volt = _ValueLabel(g1)
+         self._lbl_curr = _ValueLabel(g1)
++        self._lbl_bat_meta = _MetaLabel(g1)
+         f1.addRow("飞行模式", self._lbl_mode)
+         f1.addRow("锁定状态", self._lbl_lock)
+         f1.addRow("电池电压", self._lbl_volt)
+         f1.addRow("电池电流", self._lbl_curr)
++        f1.addRow("0x0D帧", self._lbl_bat_meta)
+         vbox.addWidget(g1)
+ 
+         # ---- 组2：飞控融合估计（IMU 估计，非外部传感器）----
+@@ -124,18 +209,20 @@ class FlightDataDock(QDockWidget):
+         g3 = QGroupBox("通用外部传感器", body)
+         f3 = QFormLayout(g3)
+         f3.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+-        self._lbl_gpos = _ValueLabel(g3)      # 0x32 通用位置
++        self._lbl_gpos = _SensorValueLabel(g3)      # 0x32 通用位置
+         self._lbl_gpos_sta = _ValueLabel(g3)  # 0x0E STA_G_POS
+-        self._lbl_gvel = _ValueLabel(g3)      # 0x33 通用速度(光流)
++        self._lbl_gvel = _SensorValueLabel(g3)      # 0x33 通用速度(光流)
+         self._lbl_gvel_sta = _ValueLabel(g3)  # 0x0E STA_G_VEL
+-        self._lbl_gdis = _ValueLabel(g3)      # 0x34 通用测距(激光)
++        self._lbl_gdis = _SensorValueLabel(g3)      # 0x34 通用测距(激光)
+         self._lbl_gdis_sta = _ValueLabel(g3)  # 0x0E STA_ALT_ADD
++        self._lbl_mod_meta = _MetaLabel(g3)
+         f3.addRow("通用位置", self._lbl_gpos)
+         f3.addRow("  └ 状态", self._lbl_gpos_sta)
+         f3.addRow("通用速度(光流)", self._lbl_gvel)
+         f3.addRow("  └ 状态", self._lbl_gvel_sta)
+         f3.addRow("通用测距(激光)", self._lbl_gdis)
+         f3.addRow("  └ 状态", self._lbl_gdis_sta)
++        f3.addRow("0x0E帧", self._lbl_mod_meta)
+         vbox.addWidget(g3)
+ 
+         vbox.addStretch(1)
+@@ -167,6 +254,14 @@ class FlightDataDock(QDockWidget):
+         vcolor = "#FF9800" if s.voltage_v < 10.5 else "#E0E0E0"
+         self._lbl_volt.set_value(f"{s.voltage_v:.2f} V", vcolor)
+         self._lbl_curr.set_value(f"{s.current_a:.2f} A")
++        self._bat_count += 1
++        raw_v = int(round(s.voltage_v * 100.0))
++        raw_i = int(round(s.current_a * 100.0))
++        self._lbl_bat_meta.set_meta(
++            f"raw={raw_v},{raw_i}",
++            s.ts,
++            self._bat_count,
++        )
+ 
+     @Slot(object)
+     def on_height(self, s) -> None:
+@@ -187,10 +282,19 @@ class FlightDataDock(QDockWidget):
+         self._mod_g_vel = s.sta_g_vel
+         self._mod_g_pos = s.sta_g_pos
+         self._mod_alt_add = s.sta_alt_add
+-        self._mod_ts = time.monotonic()
++        self._mod_ts = s.ts
++        self._mod_count += 1
++        self._lbl_gpos.set_status(s.sta_g_pos)
++        self._lbl_gvel.set_status(s.sta_g_vel)
++        self._lbl_gdis.set_status(s.sta_alt_add)
+         self._apply_status(self._lbl_gpos_sta, s.sta_g_pos)
+         self._apply_status(self._lbl_gvel_sta, s.sta_g_vel)
+         self._apply_status(self._lbl_gdis_sta, s.sta_alt_add)
++        self._lbl_mod_meta.set_meta(
++            f"raw={s.sta_g_vel},{s.sta_g_pos},{s.sta_gps},{s.sta_alt_add}",
++            s.ts,
++            self._mod_count,
++        )
+ 
+     @Slot(object)
+     def on_gen_position(self, s) -> None:
+@@ -236,11 +340,17 @@ class FlightDataDock(QDockWidget):
+     def _check_stale(self) -> None:
+         now = time.monotonic()
+         for lbl in (
+-            self._lbl_mode, self._lbl_lock, self._lbl_volt, self._lbl_curr,
++            self._lbl_mode, self._lbl_lock,
+             self._lbl_alt_fu, self._lbl_alt_add,
+             self._lbl_vx, self._lbl_vy, self._lbl_vz,
+-            self._lbl_gpos, self._lbl_gpos_sta,
+-            self._lbl_gvel, self._lbl_gvel_sta,
+-            self._lbl_gdis, self._lbl_gdis_sta,
+         ):
+             lbl.check_stale(now)
++        # 电池和外部传感器状态不再直接清成 NO：保留最后真实值，并用帧龄说明是否停更。
++        self._lbl_volt.check_stale(now, _SLOW_STALE_S, clear=False)
++        self._lbl_curr.check_stale(now, _SLOW_STALE_S, clear=False)
++        self._lbl_bat_meta.check_stale(now)
++        for lbl in (self._lbl_gpos, self._lbl_gvel, self._lbl_gdis):
++            lbl.check_stale(now, _SLOW_STALE_S, clear=False)
++        for lbl in (self._lbl_gpos_sta, self._lbl_gvel_sta, self._lbl_gdis_sta):
++            lbl.check_stale(now, _SLOW_STALE_S, clear=False)
++        self._lbl_mod_meta.check_stale(now)
+diff --git a/rviz2/rviz/n10p.rviz b/rviz2/rviz/n10p.rviz
+index d805b27e..bb115868 100644
+--- a/rviz2/rviz/n10p.rviz
++++ b/rviz2/rviz/n10p.rviz
+@@ -8,8 +8,10 @@ Panels:
+         - /LaserScan1
+         - /Path1
+         - /Path1/Topic1
++        - /ParticleCloud1
++        - /ParticleCloud1/Topic1
+       Splitter Ratio: 0.5
+-    Tree Height: 748
++    Tree Height: 1206
+   - Class: rviz_common/Views
+     Expanded:
+       - /Current View1
+@@ -204,6 +206,22 @@ Visualization Manager:
+         Reliability Policy: Reliable
+         Value: /amcl_pose
+       Value: true
++    - Alpha: 1
++      Class: nav2_rviz_plugins/ParticleCloud
++      Color: 0; 255; 0
++      Enabled: true
++      Max Arrow Length: 0.6000000238418579
++      Min Arrow Length: 0.20000000298023224
++      Name: ParticleCloud
++      Shape: Arrow (Flat)
++      Topic:
++        Depth: 6
++        Durability Policy: System Default
++        Filter size: 10
++        History Policy: System Default
++        Reliability Policy: Best Effort
++        Value: /particle_cloud
++      Value: true
+   Enabled: true
+   Global Options:
+     Background Color: 48; 48; 48
+@@ -250,35 +268,35 @@ Visualization Manager:
+   Views:
+     Current:
+       Class: rviz_default_plugins/Orbit
+-      Distance: 15.314682006835938
++      Distance: 9.50747299194336
+       Enable Stereo Rendering:
+         Stereo Eye Separation: 0.05999999865889549
+         Stereo Focal Distance: 1
+         Swap Stereo Eyes: false
+         Value: false
+       Focal Point:
+-        X: 0
+-        Y: 0
+-        Z: 0
++        X: 0.346047967672348
++        Y: 0.08866924792528152
++        Z: -0.015833131968975067
+       Focal Shape Fixed Size: true
+       Focal Shape Size: 0.05000000074505806
+       Invert Z Axis: false
+       Name: Current View
+       Near Clip Distance: 0.009999999776482582
+-      Pitch: 1.050202488899231
++      Pitch: 1.145202398300171
+       Target Frame: map
+       Value: Orbit (rviz_default_plugins)
+-      Yaw: 1.9149912595748901
++      Yaw: 1.7399914264678955
+     Saved: ~
+ Window Geometry:
+   Displays:
+     collapsed: false
+-  Height: 1014
++  Height: 1472
+   Hide Left Dock: false
+   Hide Right Dock: false
+-  QMainWindow State: 000000ff00000000fd0000000100000000000003810000035afc0200000002fb000000100044006900730070006c006100790073010000006e0000035a0000018200fffffffb0000000a005600690065007700730000000252000001760000013200ffffff0000031d0000035a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
++  QMainWindow State: 000000ff00000000fd00000001000000000000038100000524fc0200000002fb000000100044006900730070006c006100790073010000006e000005240000018200fffffffb0000000a005600690065007700730000000252000001760000013200ffffff000005ff0000052400000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+   Views:
+     collapsed: false
+-  Width: 1706
+-  X: 240
+-  Y: 178
++  Width: 2444
++  X: 116
++  Y: 54
+diff --git "a/\350\256\260\345\277\206\350\277\201\347\247\273/codex\350\256\260\345\277\206\350\277\201\347\247\273/memories/repo/dev-log.md" "b/\350\256\260\345\277\206\350\277\201\347\247\273/codex\350\256\260\345\277\206\350\277\201\347\247\273/memories/repo/dev-log.md"
+index ec019bee..e3d4bb2a 100644
+--- "a/\350\256\260\345\277\206\350\277\201\347\247\273/codex\350\256\260\345\277\206\350\277\201\347\247\273/memories/repo/dev-log.md"
++++ "b/\350\256\260\345\277\206\350\277\201\347\247\273/codex\350\256\260\345\277\206\350\277\201\347\247\273/memories/repo/dev-log.md"
+@@ -768,3 +768,7 @@ const float goal_z = (axis_mode==0u || axis_mode==3u) ? Uplink_GetGoalZ_Cm() : 0
+ [2026-07-20] [GUI位置测试可用性完善：用户指出坐标标定当前cur太暗太小、稳定性页语义不清且没有开始按钮、说明文字不可读] → [根因：第一版偏工程调试面板，稳定性页默认被动统计窗口样本，未明确“静止定位稳定性”用途，也没有用户级流程；QGroupBox在当前主题下说明文字对比度不足] → [修改 `gui/position_test/position_test_window.py`：坐标标定页新增产品级操作引导，按钮改为1/2/3步骤，当前cur改为亮绿色22px粗体；稳定性页改为测试流程模式，支持测试类型选择、开始测试、停止并结算、重置结果、测试时长、跳变阈值，默认语义明确为“静止定位稳定性（起飞前观测质量检查，不是飞行控制稳定性）”；表格新增抖动σ、最大摆动、漂移、判读列；说明/引导区域改为深底亮字] → [验证：`.venv-linux` 下 `py_compile gui/main.py gui/position_test/position_test_window.py` 通过，`git diff --check` 通过；Qt offscreen注入0xF6后截图验证 `artifacts/gui/position_test_calibration_polished.png` 和 `artifacts/gui/position_test_stability_polished.png`，当前cur和稳定性摘要均为明亮绿色大字，稳定性测试只在点击开始后采样；安全影响：仅GUI显示/诊断，不接PID、不发0x41、不改变飞控输出]
+ [2026-07-20] [GUI位置测试两个现场bug修复：页面被撑到超屏，频率始终约10Hz] → [根因1：坐标标定/稳定性页为了强调说明和状态，给长文本、大字号、`minimumWidth` 和横向扩展策略过多，叠加 `gui/config.json` 保存的异常窗口几何/旧Dock状态，导致主窗口超出屏幕；根因2：GUI原先显示的是STM32→IMU→数传→GUI的`0xF6`镜像到达频率，而不是树莓派→STM32的`0xF5`输入频率；固件中`UPLINK_F6_MIRROR_TICK_GAP=5`本来就把调试镜像限到约10Hz] → [解决：压缩位置测试页说明文字、表格列宽和长状态文本，移除`当前cur`的强制420px最小宽度，保留亮绿色大字但不再撑宽窗口；`gui/main.py`启动时把保存窗口尺寸/位置钳制到当前屏幕可见范围；`gui/config.json`恢复默认1200×800、居中并清空旧Dock状态；实时页频率改成`F5输入 / F6镜像`，用`rx_cnt`差值估算真实F5输入频率；`UPLINK_F6_MIRROR_TICK_GAP`改为2，F6调试镜像约25Hz] → [验证：`.venv-linux`下`py_compile gui/main.py gui/position_test/position_test_window.py`通过，`python3 -m json.tool gui/config.json`通过，`git diff --check`通过，`bash scripts/build.sh`通过；Qt offscreen注入60帧F6且rx_cnt每帧+2时实时页显示`50.0 / 25.0 Hz`，位置测试窗口在1100×720截图下可见，主窗口在800×800虚拟屏被钳到760×740；安全影响：F6频率仅影响GUI调试镜像，不接PID、不写`rt_tar`、不发`0x41`、不改变飞行输出；建议控制观测后续从STM32内部F5快照按20~30Hz起步，50Hz作为带宽稳定后再测]
+ [2026-07-20] [GUI位置测试坐标标定/稳定性排版二次修正：结果表只剩一行、点位表下方空白大、稳定性绿色摘要换成多行] → [根因：坐标标定页点位表未固定高度，结果表作为唯一stretch区域被剩余高度反向压缩；页面没有滚动容器导致小屏无法滚动查看；稳定性摘要设置了最大宽度和自动换行，左侧仍有空间时也被挤成多行，并且未开始状态写了提示句而不是纯数据] → [解决：坐标标定页加入QScrollArea，点位表固定为3行高度，结果表固定为6行高度并关闭表内纵向滚动，页面整体可鼠标滚轮查看；去掉点位表到结果表之间的无意义扩张空白；稳定性摘要取消最大宽度和wordWrap，改为横向Expanding显示纯数据，未开始时仅显示样本/有效/无效/F5/F6/节流，不再显示“点击开始测试后才采样”] → [验证：`.venv-linux`下`py_compile gui/main.py gui/position_test/position_test_window.py`通过，`git diff --check`通过；Qt offscreen截图`artifacts/gui/position_test_calibration_layout_fixed.png`显示点位3行和结果6行完整可见，`position_test_stability_layout_fixed_idle.png`/`running.png`显示绿色摘要一行横向排布；安全影响：仅GUI布局，不改协议、不改固件、不接PID、不发0x41、不改变飞控输出]
++[2026-07-21] [匿名光流绿灯呼吸但GUI显示G_VEL/ALT无数据，用户要求抓包判断是真无数据还是GUI解析问题] → [关闭GUI后直连抓`/dev/ttyACM0 @500000` 15秒，收到`raw_bytes=114170`、合法帧`10115`，常规0x01/0x02/0x03/0x04/0x05/0x06/0x07/0x08/0x09/0x0D/0x0E/0x20/0x30/0x40/0x41/0xFA均存在，但`0x33=0`、`0x34=0`、`0x51=0`；0x0E共51帧且原始字节恒为`AA AF 0E 04 00 00 00 00 6B 81`，即`STA_G_VEL=0`、`STA_G_POS=0`、`GPS=0`、`STA_ALT_ADD=0`] → [结论：GUI显示“无数据”不是解析错误，线上确实没有通用速度0x33和通用测距0x34下行帧，IMU状态帧也明确报告G_VEL和ALT_ADD无数据；同时0x05高度帧存在且`ALT_ADD≈2cm`、`ALT_STA=0`，这是IMU高度遥测字段，不等于0x34通用测距模块已接入有效] → [下一步排查应沿上游走：确认匿名光流TX/RX/GND是否接到STM32 UART4 PA1/PA0/GND、波特率是否500000、光流输出帧目标地址是否为`HW_TYPE=0x61`或广播、是否持续输出0x51 MODE1和0x34高度；必要时新增限频调试日志或RAM计数读取`ano_of.of_update_cnt/alt_update_cnt/link_sta/work_sta`，不要先改GUI]
++[2026-07-23] [位置测试GUI仍无显示，但树莓派日志显示UART2 ACK `F5 #20790...`持续增长] → [本机关闭GUI/确认`/dev/ttyACM0`未被占用后，用GUI同源`FrameParser`直抓匿名数传10.0秒，得到`raw_bytes=39607`、有效帧`3378`，常规0x01/0x02/0x03/0x04/0x05/0x06/0x07/0x08/0x09/0x0D/0x0E/0x20/0x30/0x40/0x41/0xFA均存在，但`0xF6=0`] → [结论：GUI页面不显示的直接原因是当前数传下行没有收到0xF6镜像帧；树莓派端`0xA0 GREEN F5 #...`只证明USB-TTL/UART2 ACK链路正常，不等价于STM32已把F5快照经UART5→IMU→数传镜像到GUI。由于本次抓包时间约21:59，而用户提供的树莓派日志时间约21:48，尚缺“同一时间ACK增长+同一时间F6抓包”的同步证据，不能把根因直接写死为固件或GUI] → [下一步闸门：保持树莓派`send_slam_cur_f5.py`持续运行并确认ACK编号增长，同时关闭GUI后抓`/dev/ttyACM0`；若同步抓包仍`F6=0`，优先查`Uplink_Cmd_Tick()`是否触发`Rpi_Position_Mirror_Send()`、当前运行固件是否包含0xF6、以及UART5下行排队/IMU转发；若同步抓包有F6而GUI无显示，再查GUI页面激活和`PositionTestWindow.on_frame()`订阅]
++[2026-07-24] [GUI飞行数据面板电量长期显示16.30V、外部传感器后续显示无效，用户对比官方匿名上位机认为GUI误判] → [排查GUI链路：主窗口`_on_frame()`确实把所有入站帧喂给`TelemetryBus`，`0x0D`电池解码为`<HH>/100`且与官方协议、数据帧监视、树莓派解析器一致；飞行数据Dock旧逻辑只显示最后值，没有显示0x0D帧计数/帧龄/原始raw，导致无法区分“GUI没更新”和“收到的0x0D原始值本来仍是1630”；外部传感器状态旧逻辑把0x0E状态标签和通用数据标签统一放进2.5s超时清空，会把短时未刷新的状态显示成NO/无效，语义不同于官方上位机的最后状态保持] → [解决：修改`gui/widgets/flight_data_dock.py`，新增0x0D诊断行显示`raw=电压raw,电流raw | #帧计数 | 帧龄`，电池超时后保留最后值并标“旧”而不是静默卡住；新增0x0E诊断行显示四个状态raw、计数和帧龄，状态标签超时后显示“正常 旧/良好 旧”而非直接变NO；通用位置/速度/测距数值行新增传感器状态感知，官方状态正常时短时无数据只显示等待/旧值，不再误判成传感器无效；同时扩展`gui/services/frame_recorder.py`记录白名单和字段解码，补上0x0D电池、0x32通用位置、0x33通用速度、0x34测距，方便后续导出日志与官方上位机逐帧对比] → [验证：`.venv-linux/bin/python -m py_compile gui/widgets/flight_data_dock.py gui/services/frame_recorder.py gui/services/telemetry_bus.py gui/services/telemetry_decoder.py`通过；Qt offscreen注入0x0D/0x0E/0x33后截图`artifacts/gui/flight_data_debug_fix.png`生成，显示`raw=1630,0 | #1 | 0.0s前`和`raw=2,0,0,2 | #1 | 0.0s前`；强制20s超时验证电压显示`16.30 V 旧`、状态显示`正常 旧`；`git diff --check`通过。安全影响：仅GUI显示/记录增强，不改飞控固件、不改协议、不影响飞行输出；下一步若仍显示16.30V但raw计数持续增长，应转查STM32/IMU实际下发的0x0D来源而不是GUI刷新]
++[2026-07-24] [定点模式下遥控器CH2前推方向与现实世界相反，实机表现为前推反而后退] → [初次处理时误把“CH2反向”理解为姿态俯仰`pit`方向，用户立即纠正：问题限定在模式2定点下的CH2水平速度控制；根因位于`FcSrc/ANO_LX.c::RC_Data_Task()`的`mod_f[0] == 2`分支，CH2写入`rt_tar.st_data.vel_y`时符号与实测方向相反] → [解决：前进式修正，恢复姿态`pit`原符号不变，只将定点模式`rt_tar.st_data.vel_y = tmp_ch_dz[ch_2_pit] * ...`改为取负；不改CH1、不改CH3/CH4、不改PID、不改0x41结构] → [验证：`git diff --check -- FcSrc/ANO_LX.c`通过，`./scripts/build.sh`通过，仅保留项目已有CMSIS pragma和旧static声明告警；待用户重新烧录后只在定点模式下小幅测试CH2方向]

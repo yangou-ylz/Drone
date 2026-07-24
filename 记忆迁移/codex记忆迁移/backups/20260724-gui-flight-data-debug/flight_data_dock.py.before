@@ -9,7 +9,7 @@
 
 设计约束：
 - 纯显示 Dock，订阅 TelemetryBus 的 typed 样本信号，自身不解码
-- 每类数据带"最近更新时刻"，状态类数据保持最后一次真实状态，不用超时误判成无效
+- 每类数据带"最近更新时刻"，超时(默认2.5s)自动置为 NO / 灰显
 - 配色沿用暗色主题，与数字面板风格一致
 """
 from __future__ import annotations
@@ -34,9 +34,8 @@ _MODE_NAMES = {0: "自稳", 1: "定高", 2: "定点", 3: "程控"}
 _STA_NAMES = {0: "无数据", 1: "不可用", 2: "正常", 3: "良好"}
 _STA_COLORS = {0: "#888888", 1: "#FF9800", 2: "#4CAF50", 3: "#00E5FF"}
 
-# 数据超时阈值（秒）：数值型数据超过则灰显；状态型数据只显示帧龄，不覆盖最后状态。
+# 数据超时阈值（秒）：超过则显示 NO / 灰显
 _STALE_S = 2.5
-_SLOW_STALE_S = 10.0
 
 
 class _ValueLabel(QLabel):
@@ -49,12 +48,10 @@ class _ValueLabel(QLabel):
             "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
         )
         self._ts: float = 0.0
-        self._last_text: str = "NO"
         self.set_no()
 
     def set_no(self) -> None:
         self.setText("NO")
-        self._last_text = "NO"
         self.setStyleSheet(
             "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
             " color: #777777;"
@@ -62,7 +59,6 @@ class _ValueLabel(QLabel):
         self._ts = 0.0
 
     def set_value(self, text: str, color: str = "#E0E0E0") -> None:
-        self._last_text = text
         self.setText(text)
         self.setStyleSheet(
             "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
@@ -70,86 +66,9 @@ class _ValueLabel(QLabel):
         )
         self._ts = time.monotonic()
 
-    def mark_stale(self) -> None:
-        if self._ts <= 0.0:
-            self.set_no()
-            return
-        self.setText(f"{self._last_text} 旧")
-        self.setStyleSheet(
-            "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
-            " color: #9E9E9E;"
-        )
-
-    def check_stale(self, now: float, stale_s: float = _STALE_S, clear: bool = True) -> None:
-        if self._ts > 0.0 and (now - self._ts) > stale_s:
-            if clear:
-                self.set_no()
-            else:
-                self.mark_stale()
-
-
-class _MetaLabel(QLabel):
-    """小号诊断标签：显示帧计数、帧龄和原始字段，避免把旧值误当实时值。"""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("未收到", parent)
-        self.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.setStyleSheet(
-            "font-family: Consolas, 'Courier New', monospace; font-size: 11px; color:#888;"
-        )
-        self._prefix = "未收到"
-        self._ts = 0.0
-        self._count = 0
-
-    def set_meta(self, prefix: str, ts: float, count: int) -> None:
-        self._prefix = prefix
-        self._ts = ts
-        self._count = count
-        self.refresh(time.monotonic())
-
-    def refresh(self, now: float) -> None:
-        if self._ts <= 0.0:
-            self.setText("未收到")
-            self.setStyleSheet(
-                "font-family: Consolas, 'Courier New', monospace; font-size: 11px; color:#888;"
-            )
-            return
-        age = max(0.0, now - self._ts)
-        color = "#9E9E9E" if age > _SLOW_STALE_S else "#8BC34A"
-        self.setStyleSheet(
-            "font-family: Consolas, 'Courier New', monospace; font-size: 11px;"
-            f" color:{color};"
-        )
-        self.setText(f"{self._prefix} | #{self._count} | {age:.1f}s前")
-
     def check_stale(self, now: float) -> None:
-        self.refresh(now)
-
-
-class _SensorValueLabel(_ValueLabel):
-    """外部传感器数值行：有官方状态正常时，短时无数据不直接显示无效。"""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._status = 0
-
-    def set_status(self, status: int) -> None:
-        self._status = int(status)
-
-    def check_stale(self, now: float, stale_s: float = _STALE_S, clear: bool = True) -> None:
-        if self._ts <= 0.0:
-            if self._status >= 2:
-                self.setText("等待数据帧")
-                self.setStyleSheet(
-                    "font-family: Consolas, 'Courier New', monospace; font-size: 13px;"
-                    " color:#9E9E9E;"
-                )
-            return
-        if now - self._ts > stale_s:
-            if self._status >= 2:
-                self.mark_stale()
-            else:
-                self.set_no()
+        if self._ts > 0.0 and (now - self._ts) > _STALE_S:
+            self.set_no()
 
 
 class FlightDataDock(QDockWidget):
@@ -165,8 +84,6 @@ class FlightDataDock(QDockWidget):
         self._mod_g_pos = 0
         self._mod_alt_add = 0
         self._mod_ts = 0.0
-        self._bat_count = 0
-        self._mod_count = 0
 
         body = QWidget()
         vbox = QVBoxLayout(body)
@@ -181,12 +98,10 @@ class FlightDataDock(QDockWidget):
         self._lbl_lock = _ValueLabel(g1)
         self._lbl_volt = _ValueLabel(g1)
         self._lbl_curr = _ValueLabel(g1)
-        self._lbl_bat_meta = _MetaLabel(g1)
         f1.addRow("飞行模式", self._lbl_mode)
         f1.addRow("锁定状态", self._lbl_lock)
         f1.addRow("电池电压", self._lbl_volt)
         f1.addRow("电池电流", self._lbl_curr)
-        f1.addRow("0x0D帧", self._lbl_bat_meta)
         vbox.addWidget(g1)
 
         # ---- 组2：飞控融合估计（IMU 估计，非外部传感器）----
@@ -209,20 +124,18 @@ class FlightDataDock(QDockWidget):
         g3 = QGroupBox("通用外部传感器", body)
         f3 = QFormLayout(g3)
         f3.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        self._lbl_gpos = _SensorValueLabel(g3)      # 0x32 通用位置
+        self._lbl_gpos = _ValueLabel(g3)      # 0x32 通用位置
         self._lbl_gpos_sta = _ValueLabel(g3)  # 0x0E STA_G_POS
-        self._lbl_gvel = _SensorValueLabel(g3)      # 0x33 通用速度(光流)
+        self._lbl_gvel = _ValueLabel(g3)      # 0x33 通用速度(光流)
         self._lbl_gvel_sta = _ValueLabel(g3)  # 0x0E STA_G_VEL
-        self._lbl_gdis = _SensorValueLabel(g3)      # 0x34 通用测距(激光)
+        self._lbl_gdis = _ValueLabel(g3)      # 0x34 通用测距(激光)
         self._lbl_gdis_sta = _ValueLabel(g3)  # 0x0E STA_ALT_ADD
-        self._lbl_mod_meta = _MetaLabel(g3)
         f3.addRow("通用位置", self._lbl_gpos)
         f3.addRow("  └ 状态", self._lbl_gpos_sta)
         f3.addRow("通用速度(光流)", self._lbl_gvel)
         f3.addRow("  └ 状态", self._lbl_gvel_sta)
         f3.addRow("通用测距(激光)", self._lbl_gdis)
         f3.addRow("  └ 状态", self._lbl_gdis_sta)
-        f3.addRow("0x0E帧", self._lbl_mod_meta)
         vbox.addWidget(g3)
 
         vbox.addStretch(1)
@@ -254,14 +167,6 @@ class FlightDataDock(QDockWidget):
         vcolor = "#FF9800" if s.voltage_v < 10.5 else "#E0E0E0"
         self._lbl_volt.set_value(f"{s.voltage_v:.2f} V", vcolor)
         self._lbl_curr.set_value(f"{s.current_a:.2f} A")
-        self._bat_count += 1
-        raw_v = int(round(s.voltage_v * 100.0))
-        raw_i = int(round(s.current_a * 100.0))
-        self._lbl_bat_meta.set_meta(
-            f"raw={raw_v},{raw_i}",
-            s.ts,
-            self._bat_count,
-        )
 
     @Slot(object)
     def on_height(self, s) -> None:
@@ -282,19 +187,10 @@ class FlightDataDock(QDockWidget):
         self._mod_g_vel = s.sta_g_vel
         self._mod_g_pos = s.sta_g_pos
         self._mod_alt_add = s.sta_alt_add
-        self._mod_ts = s.ts
-        self._mod_count += 1
-        self._lbl_gpos.set_status(s.sta_g_pos)
-        self._lbl_gvel.set_status(s.sta_g_vel)
-        self._lbl_gdis.set_status(s.sta_alt_add)
+        self._mod_ts = time.monotonic()
         self._apply_status(self._lbl_gpos_sta, s.sta_g_pos)
         self._apply_status(self._lbl_gvel_sta, s.sta_g_vel)
         self._apply_status(self._lbl_gdis_sta, s.sta_alt_add)
-        self._lbl_mod_meta.set_meta(
-            f"raw={s.sta_g_vel},{s.sta_g_pos},{s.sta_gps},{s.sta_alt_add}",
-            s.ts,
-            self._mod_count,
-        )
 
     @Slot(object)
     def on_gen_position(self, s) -> None:
@@ -340,17 +236,11 @@ class FlightDataDock(QDockWidget):
     def _check_stale(self) -> None:
         now = time.monotonic()
         for lbl in (
-            self._lbl_mode, self._lbl_lock,
+            self._lbl_mode, self._lbl_lock, self._lbl_volt, self._lbl_curr,
             self._lbl_alt_fu, self._lbl_alt_add,
             self._lbl_vx, self._lbl_vy, self._lbl_vz,
+            self._lbl_gpos, self._lbl_gpos_sta,
+            self._lbl_gvel, self._lbl_gvel_sta,
+            self._lbl_gdis, self._lbl_gdis_sta,
         ):
             lbl.check_stale(now)
-        # 电池和外部传感器状态不再直接清成 NO：保留最后真实值，并用帧龄说明是否停更。
-        self._lbl_volt.check_stale(now, _SLOW_STALE_S, clear=False)
-        self._lbl_curr.check_stale(now, _SLOW_STALE_S, clear=False)
-        self._lbl_bat_meta.check_stale(now)
-        for lbl in (self._lbl_gpos, self._lbl_gvel, self._lbl_gdis):
-            lbl.check_stale(now, _SLOW_STALE_S, clear=False)
-        for lbl in (self._lbl_gpos_sta, self._lbl_gvel_sta, self._lbl_gdis_sta):
-            lbl.check_stale(now, _SLOW_STALE_S, clear=False)
-        self._lbl_mod_meta.check_stale(now)

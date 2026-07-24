@@ -2,8 +2,7 @@
 """P5.5 传感器帧记录器：把入站状态帧落盘为 JSONL，便于离线/AI 诊断。
 
 设计：
-- 白名单仅"状态/传感器"类帧：
-  0x01/0x02/0x03/0x04/0x05/0x06/0x07/0x08/0x0D/0x0E/0x32/0x33/0x34
+- 白名单仅"状态/传感器"类帧：0x01/0x02/0x03/0x04/0x05/0x06/0x07/0x08/0x0E
   显式排除：0x41 实时控制、0xE0/0xE2 命令回执、0xA0 字符串日志等
 - 每条日志一行 JSON（JSONL），既人类可读也方便 `json.loads` 批量解析
 - 帧体除"已知字段解码"外，永远附带 `hex` 原始数据 → 解码错也能复盘
@@ -13,7 +12,7 @@
 
 依赖：
 - gui.io.protocol.Frame：cmd / data / addr
-- gui.services.telemetry_decoder：已有 0x03/0x04/0x05/0x07 等 decoder（直接复用，保证解码语义一致）
+- gui.services.telemetry_decoder：已有 0x03/0x04/0x05/0x07 decoder（直接复用，保证解码语义一致）
 
 不做的事（避免范围爆炸）：
 - 不解析命令/回执帧（不在传感器范畴）
@@ -35,27 +34,19 @@ from gui.io.protocol import Frame
 from gui.services.telemetry_decoder import (
     decode_attitude_euler,
     decode_attitude_quat,
-    decode_battery,
-    decode_gen_distance,
-    decode_gen_position,
-    decode_gen_velocity,
     decode_height,
     decode_velocity,
 )
 
 
-# 白名单：状态/传感器帧。包含电池和通用外部传感器，便于和官方上位机对齐诊断。
-RECORD_CMDS = frozenset({
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-    0x0D, 0x0E, 0x32, 0x33, 0x34,
-})
+# 白名单：状态/传感器帧
+RECORD_CMDS = frozenset({0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0E})
 
 # 字段解码格式（与 .github/instructions/lingxiao-protocol.instructions.md 对齐）
 _FMT_0x01 = "<hhhhhhB"   # ACC_X/Y/Z + GYR_X/Y/Z + SHOCK_STA → LEN=13
 _FMT_0x02 = "<hhhihBB"   # MAG_X/Y/Z + ALT_BAR + TMP + BAR_STA + MAG_STA → LEN=14
 _FMT_0x06 = "<BBBBB"     # MODE/LOCKED/CID/CMD0/CMD1 → LEN=5
 _FMT_0x08 = "<ii"        # POS_X / POS_Y (cm) → LEN=8
-_FMT_0x0D = "<HH"        # VOLTAGE/CURRENT ×100 → LEN=4
 _FMT_0x0E = "<BBBB"      # STA_G_VEL/G_POS/GPS/ALT_ADD → LEN=4
 
 
@@ -123,17 +114,6 @@ def _decode_fields(cmd: int, data: bytes) -> Optional[Dict[str, Any]]:
         if cmd == 0x08 and len(data) == struct.calcsize(_FMT_0x08):
             px, py = struct.unpack(_FMT_0x08, data)
             return {"pos_x_cm": px, "pos_y_cm": py}
-        if cmd == 0x0D:
-            s = decode_battery(data)
-            if s is None:
-                return None
-            raw_v, raw_i = struct.unpack(_FMT_0x0D, data)
-            return {
-                "voltage_v": s.voltage_v,
-                "current_a": s.current_a,
-                "raw_voltage_x100": raw_v,
-                "raw_current_x100": raw_i,
-            }
         if cmd == 0x0E and len(data) == struct.calcsize(_FMT_0x0E):
             g_vel, g_pos, gps, alt_add = struct.unpack(_FMT_0x0E, data)
             return {
@@ -141,40 +121,6 @@ def _decode_fields(cmd: int, data: bytes) -> Optional[Dict[str, Any]]:
                 "sta_g_pos": g_pos,
                 "sta_gps": gps,
                 "sta_alt_add": alt_add,
-            }
-        if cmd == 0x32:
-            s = decode_gen_position(data)
-            if s is None:
-                return None
-            return {
-                "pos_x_cm": s.x_cm,
-                "pos_y_cm": s.y_cm,
-                "pos_z_cm": s.z_cm,
-                "valid_x": s.valid_x,
-                "valid_y": s.valid_y,
-                "valid_z": s.valid_z,
-            }
-        if cmd == 0x33:
-            s = decode_gen_velocity(data)
-            if s is None:
-                return None
-            return {
-                "vel_x_cmps": s.vx_cmps,
-                "vel_y_cmps": s.vy_cmps,
-                "vel_z_cmps": s.vz_cmps,
-                "valid_x": s.valid_x,
-                "valid_y": s.valid_y,
-                "valid_z": s.valid_z,
-            }
-        if cmd == 0x34:
-            s = decode_gen_distance(data)
-            if s is None:
-                return None
-            return {
-                "direction": s.direction,
-                "angle": s.angle,
-                "distance_cm": s.distance_cm,
-                "valid": s.valid,
             }
     except struct.error:
         return None

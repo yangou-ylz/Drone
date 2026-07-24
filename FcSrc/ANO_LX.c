@@ -178,7 +178,7 @@ static inline void RC_Data_Task(float dT_s)
 			else
 			{
 				rt_tar.st_data.vel_x = -tmp_ch_dz[ch_1_rol] * 0.00238f * MAX_VELOCITY; // 实测vx方向与摇杆相反，取负反向
-				rt_tar.st_data.vel_y = tmp_ch_dz[ch_2_pit] * 0.00238f * MAX_VELOCITY;
+				rt_tar.st_data.vel_y = -tmp_ch_dz[ch_2_pit] * 0.00238f * MAX_VELOCITY; // 定点模式CH2实测方向相反，取负修正
 			}
 			rt_tar.st_data.rol = 0;
 			rt_tar.st_data.pit = 0;

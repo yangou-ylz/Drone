@@ -59,22 +59,34 @@ void AnoOF_GetOneByte(uint8_t data)
 		rxstate = 1;
 		_datatemp[0] = data;
 	}
-	else if (rxstate == 1 && (data == HW_TYPE || data == HW_ALL))
+	else if (rxstate == 1 && (data == HW_TYPE || data == HW_ALL || data == SWJ_ADDR))
 	{
 		rxstate = 2;
+		ano_of.last_addr = data;
 		_datatemp[1] = data;
+	}
+	else if (rxstate == 1)
+	{
+		ano_of.last_addr = data;
+		ano_of.rx_addr_err_cnt++;
+		rxstate = 0;
 	}
 	else if (rxstate == 2)
 	{
 		rxstate = 3;
 		_datatemp[2] = data;
 	}
-	else if (rxstate == 3 && data < 250)
+	else if (rxstate == 3 && data <= (sizeof(_datatemp) - 6u))
 	{
 		rxstate = 4;
 		_datatemp[3] = data;
 		_data_len = data;
 		_data_cnt = 0;
+	}
+	else if (rxstate == 3)
+	{
+		ano_of.rx_len_err_cnt++;
+		rxstate = 0;
 	}
 	else if (rxstate == 4 && _data_len > 0)
 	{
@@ -108,20 +120,41 @@ static void AnoOF_DataAnl(uint8_t *data, uint8_t len)
 {
 	u8 check_sum1 = 0, check_sum2 = 0;
 	if (*(data + 3) != (len - 6)) //判断数据长度是否正确
+	{
+		ano_of.rx_len_err_cnt++;
 		return;
+	}
 	for (u8 i = 0; i < len - 2; i++)
 	{
 		check_sum1 += *(data + i);
 		check_sum2 += check_sum1;
 	}
 	if ((check_sum1 != *(data + len - 2)) || (check_sum2 != *(data + len - 1))) //判断sum校验
+	{
+		ano_of.rx_ck_err_cnt++;
 		return;
+	}
 	//================================================================================
+	ano_of.rx_ok_cnt++;
+	check_time_ms[0] = 0;
 
 	if (*(data + 2) == 0X51) //光流信息
 	{
+		u8 payload_len = *(data + 3);
+		ano_of.id_51_cnt++;
+		if (payload_len <= ANO_OF_51_MAX_PAYLOAD_LEN)
+		{
+			ano_of.raw_51_len = payload_len;
+			ano_of.raw_51_mode = *(data + 4);
+			for (u8 i = 0; i < payload_len; i++)
+			{
+				ano_of.raw_51_payload[i] = *(data + 4 + i);
+			}
+			ano_of.raw_51_update_cnt++;
+		}
 		if (*(data + 4) == 0) //原始光流信息
 		{
+			ano_of.mode0_cnt++;
 			ano_of.of0_sta = *(data + 5);
 			ano_of.of0_dx = *(data + 6);
 			ano_of.of0_dy = *(data + 7);
@@ -129,6 +162,7 @@ static void AnoOF_DataAnl(uint8_t *data, uint8_t len)
 		}
 		else if (*(data + 4) == 1) //高度融合后光流信息
 		{
+			ano_of.mode1_cnt++;
 			ano_of.of1_sta = *(data + 5);
 			ano_of.of1_dx = *((s16 *)(data + 6));
 			ano_of.of1_dy = *((s16 *)(data + 8));
@@ -139,6 +173,7 @@ static void AnoOF_DataAnl(uint8_t *data, uint8_t len)
 		}
 		else if (*(data + 4) == 2) //惯导融合后光流信息
 		{
+			ano_of.mode2_cnt++;
 			ano_of.of2_sta = *(data + 5);
 			ano_of.of2_dx = *((s16 *)(data + 6));
 			ano_of.of2_dy = *((s16 *)(data + 8));
@@ -152,6 +187,9 @@ static void AnoOF_DataAnl(uint8_t *data, uint8_t len)
 	}
 	else if (*(data + 2) == 0X34) //高度信息
 	{
+		ano_of.id_34_cnt++;
+		ano_of.of_alt_direction = *(data + 4);
+		ano_of.of_alt_angle = *((u16 *)(data + 5));
 		ano_of.of_alt_cm = *((u32 *)(data + 7));
 		//
 		check_time_ms[2] = 0;
@@ -159,6 +197,7 @@ static void AnoOF_DataAnl(uint8_t *data, uint8_t len)
 	}
 	else if (*(data + 2) == 0X01) //惯性数据
 	{
+		ano_of.id_other_cnt++;
 		ano_of.acc_data_x = *((s16 *)(data + 4));
 		ano_of.acc_data_y = *((s16 *)(data + 6));
 		ano_of.acc_data_z = *((s16 *)(data + 8));
@@ -169,10 +208,15 @@ static void AnoOF_DataAnl(uint8_t *data, uint8_t len)
 	}
 	else if (*(data + 2) == 0X04) //姿态信息
 	{
+		ano_of.id_other_cnt++;
 		//四元数格式
 		ano_of.quaternion[0] = (*((s16 *)(data + 4))) * 0.0001f;
 		ano_of.quaternion[1] = (*((s16 *)(data + 6))) * 0.0001f;
 		ano_of.quaternion[2] = (*((s16 *)(data + 8))) * 0.0001f;
 		ano_of.quaternion[3] = (*((s16 *)(data + 10))) * 0.0001f;
+	}
+	else
+	{
+		ano_of.id_other_cnt++;
 	}
 }
