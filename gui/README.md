@@ -68,10 +68,11 @@ $env:LINGXIAO_GUI_FAKE = "1"
   - `参数写入 F2`：选目标轴（X/Y/Z 位置）+ float 值，飞控回 `P01=50.0` 或 `P01=500.0 CLP`（限幅）或 `P?? UNK`（未知 ID，红）。
   - `三轴写入 F3`（命令面板待接）：一帧同时带 X+Y+Z三个 float，原子批量覆盖 GOAL_X/Y/Z；飞控回 `P*=30.0,44.0,55.0` 或末尾带 `CLP`。命令行工具：`python groundTest\send_xyz.py --port COM11 --x 30 --y 44 --z 55`。
   - `飞行控制（占位）` / `模式切换（占位）`：UI 槽位预留，固件未实现，发送按钮永久禁用。
-- **日志视图**：彩色分级（DEBUG/INFO/WARN/ERROR），等宽字体，可暂停滚动、清屏、导出。
+- **日志视图**：彩色分级（DEBUG/INFO/WARN/ERROR），等宽字体，可暂停滚动、清屏、导出；RViz 输出统一归类为紫色 `[rviz]`。
 - **报警**：ERROR 弹窗 + WARN 状态栏闪烁。
 - **状态栏**：连接灯、RX/TX 字节计数、最后接收时刻。
-- **菜单**：文件（导出日志/打开日志文件夹/退出）、视图（清屏 Ctrl+L、暂停滚动、主题暗/浅）、帮助（关于）。
+- **菜单**：文件（导出日志/打开日志文件夹/退出）、视图（清屏 Ctrl+L、暂停滚动、主题暗/浅）、功能、`rviz`、帮助（关于）。
+- **RViz 快捷入口**：Ubuntu 下点击顶栏 `rviz` 会在后台线程执行 `rviz2 -d /home/ubuntu22/stm32/ANO_LX_FC/rviz2/rviz/n10p.rviz`，弹出独立 RViz 窗口；再次点击或关闭 GUI 会停止 RViz 子进程。
 - **持久化**：窗口大小/位置、分割条比例、主题、日志目录均存 `%APPDATA%/Lingxiao_GUI/config.json`。
 
 ## 4. 扩展一条新命令（3 步）
@@ -159,6 +160,8 @@ from . import cmd_f4  # noqa: F401
 | 一打开就提示缺少 pyqtgraph / PyOpenGL | 用错了解释器，跑到了默认 Python 3.14 / `.venv` | 改用 [run_gui.bat](../run_gui.bat) 或 `C:\Users\20399\AppData\Local\Programs\Python\Python313\python.exe -m gui.main` |
 | 占位命令按钮永远灰 | 设计如此，固件未实现 | 待飞控侧 0xE1/0xE2 实装后再写真实命令模块 |
 | 主题切换后日志区底色不变 | 故意：日志暗背景对长时间盯屏更友好 | 不需要改 |
+| 点击 `rviz` 后没有窗口 | ROS2 环境未 source、`rviz2` 不在 PATH、或配置文件不存在 | Linux 下默认会自动 source `/opt/ros/humble/setup.bash`；仍失败时看底部紫色 `[rviz]` 日志 |
+| 关闭 GUI 后担心 RViz 留后台 | RViz 是独立外部进程，需要显式管理 | `MainWindow.closeEvent()` 会先停止 RViz，超时后强制结束进程组 |
 
 ## 7. 开发者自测
 
@@ -172,6 +175,13 @@ from . import cmd_f4  # noqa: F401
 # 断开按钮回归
 & "C:\Users\20399\AppData\Local\Programs\Python\Python313\python.exe" gui\_smoke_disconnect.py
 & "C:\Users\20399\AppData\Local\Programs\Python\Python313\python.exe" gui\_smoke_real_disconnect.py
+```
+
+Ubuntu22 当前开发环境的 RViz 入口回归测试：
+
+```bash
+cd /home/ubuntu22/stm32/ANO_LX_FC
+QT_QPA_PLATFORM=offscreen .venv-linux/bin/python gui/test/_smoke_rviz.py
 ```
 
 完整长期计划见 `/memories/session/plan.md`，架构备忘见 `/memories/repo/gui-architecture.md`。

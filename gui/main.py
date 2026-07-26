@@ -44,6 +44,7 @@ from gui.services.command_registry import REGISTRY  # noqa: E402
 from gui.services.config_service import ConfigService  # noqa: E402
 from gui.services.log_service import LogLevel, LogService  # noqa: E402
 from gui.services.frame_recorder import FrameRecorder  # noqa: E402
+from gui.services.rviz_process import RvizProcessManager  # noqa: E402
 from gui.services.telemetry_bus import STATUS_ERROR, STATUS_INFO, STATUS_WARN, TelemetryBus  # noqa: E402
 from gui.services.telemetry_models import PathTrackerConfig  # noqa: E402
 from gui.services.theme_service import DEFAULT_THEME, THEMES, apply_theme  # noqa: E402
@@ -108,6 +109,8 @@ class MainWindow(QMainWindow):
         self._config = ConfigService()
         self._log = LogService(log_dir=str(self._config.get("log_dir", "")))
         self._alarm = AlarmService(self._log, parent_widget=self)
+        self._rviz = RvizProcessManager(self._log, self)
+        self._rviz.running_changed.connect(self._on_rviz_running_changed)
 
         # ---- 2. 恢复窗口几何 ----
         size = self._config.get("window_size", [1200, 800])
@@ -491,6 +494,12 @@ class MainWindow(QMainWindow):
         self._act_imu_test = QAction("IMU 测试台", self, checkable=True)
         self._act_imu_test.toggled.connect(self._on_toggle_imu_test)
         m_feature.addAction(self._act_imu_test)
+
+        # ----- 顶层 RViz 快捷按钮 -----
+        self._act_rviz = QAction("rviz", self, checkable=True)
+        self._act_rviz.setToolTip("启动/停止 rviz2 -d rviz2/rviz/n10p.rviz")
+        self._act_rviz.toggled.connect(self._on_rviz_toggled)
+        bar.addAction(self._act_rviz)
 
         # ----- 帮助 -----
         m_help = bar.addMenu("帮助(&H)")
@@ -1082,6 +1091,25 @@ class MainWindow(QMainWindow):
         self._config.set("ui.theme", applied)
         self._log.info("系统", f"已切换主题：{applied}")
 
+    def _on_rviz_toggled(self, checked: bool) -> None:
+        """顶部 rviz 按钮：启动/停止外部 RViz 窗口。"""
+        if checked:
+            ok = self._rviz.start()
+            if not ok:
+                self._act_rviz.blockSignals(True)
+                self._act_rviz.setChecked(False)
+                self._act_rviz.blockSignals(False)
+        else:
+            self._rviz.stop("用户点击 rviz 按钮")
+
+    def _on_rviz_running_changed(self, running: bool) -> None:
+        """rviz 自行退出或被停止后，同步菜单按钮状态。"""
+        if hasattr(self, "_act_rviz"):
+            self._act_rviz.blockSignals(True)
+            self._act_rviz.setChecked(running)
+            self._act_rviz.setText("rviz(运行中)" if running else "rviz")
+            self._act_rviz.blockSignals(False)
+
     def _on_about(self) -> None:
         QMessageBox.information(
             self, "关于",
@@ -1107,7 +1135,9 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 self._log.warn("系统", f"保存 Dock 布局失败：{exc}")
             self._config.update(**updates)
-            # 2. 停 worker
+            # 2. 停外部 rviz，防止 GUI 退出后遗留后台窗口/进程
+            self._rviz.stop("GUI 退出", wait_ms=4000)
+            # 3. 停 worker
             self._worker.stop()
             QMetaObject.invokeMethod(
                 self._worker, "close_port", Qt.ConnectionType.QueuedConnection,
@@ -1116,7 +1146,7 @@ class MainWindow(QMainWindow):
             if not self._thread.wait(2000):
                 self._thread.terminate()
                 self._thread.wait(500)
-            # 3. 关日志
+            # 4. 关日志
             self._log.close()
         finally:
             super().closeEvent(event)

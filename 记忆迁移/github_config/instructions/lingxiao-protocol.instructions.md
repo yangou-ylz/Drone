@@ -93,6 +93,8 @@ for (u8 i = 0; i < (data_buf[3] + 4); i++) {
 > `0x0D` 电压单位10mV（1250=12.50V），电流10mA
 > `0x0E` 状态值：0=无数据，1=有数据不可用，2=正常，3=良好（GPS专用）
 
+> **硬件前置规则（2026-07-24实测）**：如果 `0x0D` 电压帧消失/归零，外部光流、激光高度、`0x33/0x34` 和 `0x0E` 状态可能同步失效，并出现 `0xA0` 日志“运动解算失效复位”。先查供电、地线、UART2 USB-TTL/DAP-UART 模块反灌电、5V/3.3V 电平；同时检查 `UART5/USART5` 是否误接外部 USB-TTL `TX`。`UART5/USART5` 是 STM32↔凌霄IMU主通信口，树莓派只读IMU数据时只能 `飞控USART5 RX → USB-TTL RX` 加 GND 旁路监听，USB-TTL `TX/VCC` 和飞控 `USART5 TX` 不接。主动给STM32发位置/目标仍走 UART2 `0xF5`。
+
 ## 数据帧：STM32主动发送（STM32发送方）
 
 | ID | 名称 | LEN | DATA格式 | 触发 |

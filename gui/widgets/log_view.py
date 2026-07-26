@@ -129,10 +129,11 @@ class LogView(QWidget):
         # 转义防注入
         cat = _html.escape(entry.category)
         msg = _html.escape(entry.message)
+        cat_color = "#CE93D8" if entry.category.lower() == "rviz" else "#80CBC4"
         line = (
             f'<span style="color:#888;">[{ts}]</span> '
             f'<span style="color:{color}; font-weight:bold;">[{entry.level.label}]</span> '
-            f'<span style="color:#80CBC4;">[{cat}]</span> '
+            f'<span style="color:{cat_color}; font-weight:bold;">[{cat}]</span> '
             f'<span style="color:#E0E0E0;">{msg}</span>'
         )
         self._append_html(line)

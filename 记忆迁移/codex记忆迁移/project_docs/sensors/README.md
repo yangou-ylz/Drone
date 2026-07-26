@@ -15,6 +15,7 @@
    - `memories/repo/dev-log.md`
 5. 不允许凭“同系列大概兼容”直接假设字段；必须通过资料、源码或抓包验证。
 6. 外部传感突然无数据时，先查 `0x0D` 电池电压和 `0x0E` 外接模块状态。已实测异常 UART2 DAP/UART 串口模块会让电压消失，并联动导致光流/激光数据消失；只有电压稳定后，才继续查传感器协议和转发逻辑。
+7. 同步检查 `UART5/USART5` 是否误接了外部 USB-TTL `TX`。USART5 是 STM32 ↔ 凌霄 IMU 主通信总线，树莓派若只读 IMU 数据用于建图，只能 `飞控USART5 RX → USB-TTL RX` 加 GND 旁路监听，不能接 USB-TTL `TX/VCC` 或飞控 `USART5 TX`。
 
 ## 当前状态
 

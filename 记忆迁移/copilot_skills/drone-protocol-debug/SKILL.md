@@ -12,6 +12,8 @@ argument-hint: '描述遇到的问题，如：收不到0x05高度帧/CMD没有�
 - UART 波特率必须为 **500000** baud（凌霄IMU固定波特率）
 - TX/RX 引脚是否对调（常见低级错误）
 - UART 中断是否使能（检查 `McuConfig.h` 和 BSP 初始化）
+- 若问题表现为 `0x0D` 电压消失、`0x0E` 外接状态无效、光流/激光/通用速度无数据或出现“运动解算失效复位”，先查硬件接线，不要先改协议代码：UART2 串口桥是否反灌/电平异常，`UART5/USART5` 是否误接了外部 USB-TTL `TX`。
+- `UART5/USART5` 是 STM32 ↔ 凌霄IMU主通信口。树莓派只读 IMU 遥测时只能 `飞控USART5 RX → USB-TTL RX` 加 GND 旁路监听，USB-TTL `TX/VCC` 和飞控 `USART5 TX` 不接；树莓派主动发位置/目标只能走 UART2 `0xF5`。
 
 ### 步骤2：确认帧解析状态机
 检查 `ANO_DT_LX_Data_Receive_Prepare()` 的状态机逻辑：

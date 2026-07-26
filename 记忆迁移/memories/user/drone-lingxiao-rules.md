@@ -35,6 +35,9 @@
 9. **Win32 串口未设 COMMTIMEOUTS** → 默认 ReadFile 阻塞等数据，工作线程卡死，UI 投递的 close_port 槽永远不执行（"点断开没反应"）。修复：open() 后调 SetCommTimeouts(ReadIntervalTimeout=MAXDWORD)
 10. **QThread worker 主循环忘记 `QCoreApplication.processEvents()`** → 通过 `QueuedConnection` 投递的槽（open_port/send_bytes 等）永远不会被派发；表现为"点连接没反应、串口连不上"；修复：在 while 循环顶部加 `processEvents()`
 11. **PySide6 `Q_ARG(bytes, ...)` 跨线程报错 `qArgDataFromPyType: Unable to find a QMetaType for "bytes"`** → Python 原生 `bytes` 不是注册的 QMetaType；修复：UI 端用 `Q_ARG(QByteArray, QByteArray(frame))`，slot 用 `@Slot(QByteArray)` 并在函数内 `bytes(payload)` 转回
+12. **无 `0x0D` 电池电压时先别追光流协议** → 现场已确认：`0x0D` 电压消失/归零会联动导致光流、激光高度、通用速度、`0x33/0x34` 和 `0x0E` 外部传感状态异常，并可能出现 `[A0 红] 运动解算失效复位`；恢复后会出现 `[A0 绿] 运动解算启动`。排查顺序固定为：电压/供电/地线/串口桥硬件 → `0x0E` 状态 → 光流/激光协议。
+13. **UART2 串口桥故障和 USART5 误接 TX 是两个独立问题，不能互相覆盖** → 异常 ANO `SWD&UART V2.0` 类 DAP/UART 复合模块接树莓派 USB 会让电压/外部传感异常；另一个独立故障是把 USB-TTL `TX` 接入 `UART5/USART5` 主通信总线，也会立刻破坏电压和外部传感数据。两条原因都保留，后续都要查。
+14. **USART5 只能旁路监听，不能主动接树莓派 TX** → `UART5/USART5` 是 STM32 ↔ 凌霄 IMU 主通信口。板上 `RX/TX` 是相对 STM32：`RX`=STM32接收IMU数据，`TX`=STM32发送给IMU。树莓派建图只读IMU数据时固定接法是 `飞控USART5 RX → USB-TTL RX`、`GND ↔ GND`，USB-TTL `TX/VCC` 和飞控 `USART5 TX` 全部不接。这个“RX接RX”不是普通串口互联，而是高阻旁路监听 IMU→STM32 数据线。
 
 ---
 
