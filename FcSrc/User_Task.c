@@ -9,6 +9,7 @@
 #include "LX_FC_State.h"
 #include "Drv_Uart.h"
 #include "Uplink_Cmd.h" /* 阶段2：运行时目标坐标 Getter */
+#include "Auto_Mission.h"
 
 // 通过UART2直接发送0xA0字符串帧到数传（绕过凌霄IMU）
 // color: 0=黑 1=红 2=绿
@@ -1238,6 +1239,23 @@ void UserTask_OneKeyCmd(void)
     static u8 mission_step_z;
     static u8 pid_active_axis;
     static u8 pid_multi_axis_warned;
+
+    if (Auto_Mission_RcControlAllowed() == 0u)
+    {
+        one_key_takeoff_f = 1;
+        one_key_mission_f = 0;
+        one_key_mission_y_f = 0;
+        one_key_mission_z_f = 0;
+        mission_step = 0;
+        mission_step_y = 0;
+        mission_step_z = 0;
+        pid_active_axis = 0;
+#if PID_TEST_EN
+        pid_stop_output_now();
+#endif
+        return;
+    }
+
     // 判断有遥控信号才执行
     if (rc_in.fail_safe == 0)
     {

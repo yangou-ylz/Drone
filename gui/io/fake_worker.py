@@ -5,9 +5,9 @@
 
 仿真行为（无飞控也能完整跑通整个发送→回执流程）：
 - :meth:`open_port` 立刻成功，发 ``connected("FAKE://<name>")``；
-- :meth:`send_bytes` 解析输入帧（仅 0xF1 / 0xF2），按飞控固件逻辑
+- :meth:`send_bytes` 解析输入帧（0xF1 / 0xF2 / 0xF3 / 0xF7），按飞控固件逻辑
   生成对应的 0xA0 字符串回执帧，**异步**（QTimer 单次触发，
-  延迟 ``ECHO_DELAY_MS``）发回到 :attr:`frame_received`；
+  延迟 ``ECHO_DELAY_MS``）发回到 :attr:`frame_received`；0xF7 额外生成 0xF8 状态帧；
 - :meth:`close_port` 取消所有待回执的回环；
 - 仿真 UNK / CLP 等异常分支，让上位机三态反馈和 ERROR 报警都能在
   无硬件状态下被测到。
@@ -36,8 +36,21 @@ from PySide6.QtCore import (
 from .protocol import (
     ADDR_BROADCAST,
     ADDR_UPPER,
+    AUTO_CMD_ABORT_LAND,
+    AUTO_CMD_CLEAR_ERROR,
+    AUTO_CMD_DRYRUN_TAKEOFF_LAND,
+    AUTO_CMD_EMERGENCY_LOCK,
+    AUTO_CMD_PRECHECK,
+    AUTO_CMD_QUERY_STATUS,
+    AUTO_CMD_LOCK_RC,
+    AUTO_CMD_RELEASE_RC,
+    AUTO_CMD_REQUEST_MODE2,
+    AUTO_CMD_START_LOW_TAKEOFF_LAND,
+    AUTO_FLAG_NO_XY_MOTION,
+    AUTO_SAFETY_KEY,
     COLOR_GREEN,
     COLOR_RED,
+    CMD_AUTO_STATUS,
     Frame,
     FrameParser,
     build_frame,
@@ -70,6 +83,18 @@ def _make_a0_frame(color: int, text: str) -> Frame:
     )
 
 
+def _make_data_frame(cmd: int, data: bytes) -> Frame:
+    raw = build_frame(ADDR_UPPER, cmd, data)
+    return Frame(
+        dest=ADDR_UPPER,
+        cmd=cmd,
+        data=data,
+        sc=raw[-2],
+        ac=raw[-1],
+        raw=raw,
+    )
+
+
 class FakeWorker(QObject):
     """与 SerialWorker 鸭子兼容的离线仿真器。"""
 
@@ -88,6 +113,9 @@ class FakeWorker(QObject):
         self._parser = FrameParser()
         # 持有所有未触发的 QTimer，避免 GC；close 时全部取消
         self._pending_timers: list[QTimer] = []
+        self._auto_status_seq = 0
+        self._auto_rx_cnt = 0
+        self._auto_err_cnt = 0
 
     # ---- 线程入口（保留接口签名，仿真不需要循环） ----
     @Slot()
@@ -147,6 +175,8 @@ class FakeWorker(QObject):
             self._echo_f2(fr.data)
         elif fr.cmd == 0xF3:
             self._echo_f3(fr.data)
+        elif fr.cmd == 0xF7:
+            self._echo_f7(fr.data)
         # 其它 CMD 静默丢弃（飞控也不会回执）
 
     def _echo_f1(self, data: bytes) -> None:
@@ -176,6 +206,98 @@ class FakeWorker(QObject):
         if clamped:
             text += " CLP"
         self._schedule_echo(COLOR_GREEN, text)
+
+    def _echo_f7(self, data: bytes) -> None:
+        if len(data) != 16:
+            self._auto_err_cnt += 1
+            self._schedule_echo(COLOR_RED, "AUTO ERR seq=0 err=0001")
+            self._schedule_auto_status(0, 0, 0x22, 0x00, 0x0001)
+            return
+        ver, seq, cmd, key, height, hold, flags, timeout, _reserved = struct.unpack(
+            "<BHBHHHHHH", data
+        )
+        self._auto_rx_cnt += 1
+        key_required = cmd in (
+            AUTO_CMD_REQUEST_MODE2,
+            AUTO_CMD_DRYRUN_TAKEOFF_LAND,
+            AUTO_CMD_START_LOW_TAKEOFF_LAND,
+            AUTO_CMD_RELEASE_RC,
+            AUTO_CMD_LOCK_RC,
+        )
+        error = 0
+        color = COLOR_GREEN
+        if ver != 1:
+            error = 0x0002
+            color = COLOR_RED
+            text = f"AUTO ERR seq={seq} err={error:04X}"
+            state = 0x16
+        elif key_required and key != AUTO_SAFETY_KEY:
+            error = 0x0003
+            color = COLOR_RED
+            text = f"AUTO ERR seq={seq} err={error:04X}"
+            state = 0x16
+        else:
+            state = {
+                AUTO_CMD_QUERY_STATUS: 0,
+                AUTO_CMD_PRECHECK: 0,
+                AUTO_CMD_REQUEST_MODE2: 3,
+                AUTO_CMD_DRYRUN_TAKEOFF_LAND: 4,
+                AUTO_CMD_START_LOW_TAKEOFF_LAND: 10,
+                AUTO_CMD_ABORT_LAND: 20,
+                AUTO_CMD_EMERGENCY_LOCK: 21,
+                AUTO_CMD_CLEAR_ERROR: 0,
+                AUTO_CMD_RELEASE_RC: 0,
+                AUTO_CMD_LOCK_RC: 0,
+            }.get(cmd, 0x16)
+            label = {
+                AUTO_CMD_QUERY_STATUS: "QUERY",
+                AUTO_CMD_PRECHECK: "PRECHECK_OK",
+                AUTO_CMD_REQUEST_MODE2: "MODE2_WAIT",
+                AUTO_CMD_DRYRUN_TAKEOFF_LAND: "DRY_UNLOCK",
+                AUTO_CMD_START_LOW_TAKEOFF_LAND: "UNLOCK_REQ",
+                AUTO_CMD_ABORT_LAND: "ABORT_LAND",
+                AUTO_CMD_EMERGENCY_LOCK: "EMERGENCY",
+                AUTO_CMD_CLEAR_ERROR: "CLEAR",
+                AUTO_CMD_RELEASE_RC: "RC_RELEASE",
+                AUTO_CMD_LOCK_RC: "RC_LOCKOUT",
+            }.get(cmd, "BAD_CMD")
+            if label == "BAD_CMD":
+                error = 0x0006
+                color = COLOR_RED
+            text = f"AUTO {label} seq={seq}"
+            if error:
+                text += f" err={error:04X}"
+        if error:
+            self._auto_err_cnt += 1
+        self._schedule_echo(color, text)
+        status_flags = 0x0001 | 0x0002 | AUTO_FLAG_NO_XY_MOTION | 0x0040 | 0x0080 | 0x0200 | 0x0400
+        if cmd != AUTO_CMD_RELEASE_RC:
+            status_flags |= 0x0100
+        if cmd in (AUTO_CMD_REQUEST_MODE2, AUTO_CMD_DRYRUN_TAKEOFF_LAND, AUTO_CMD_START_LOW_TAKEOFF_LAND):
+            status_flags |= 0x0020
+        self._schedule_auto_status(seq, cmd, state, status_flags, error)
+
+    def _schedule_auto_status(self, seq: int, cmd: int, state: int, flags: int, error: int) -> None:
+        self._auto_status_seq = (self._auto_status_seq + 1) & 0xFFFF
+        data = struct.pack(
+            "<BHHBBHHBBHhHHHH",
+            1,
+            self._auto_status_seq,
+            seq & 0xFFFF,
+            state & 0xFF,
+            cmd & 0xFF,
+            error & 0xFFFF,
+            flags & 0xFFFF,
+            2,
+            0,
+            1630,
+            3,
+            0,
+            65535,
+            self._auto_rx_cnt & 0xFFFF,
+            self._auto_err_cnt & 0xFFFF,
+        )
+        self._schedule_frame(_make_data_frame(CMD_AUTO_STATUS, data), ECHO_DELAY_MS + 15)
 
     def _echo_f3(self, data: bytes) -> None:
         """0xF3 三轴目标同帧写入：DATA = float_LE × 3，回执 ``P*=x,y,z[ CLP]``。"""
@@ -218,6 +340,25 @@ class FakeWorker(QObject):
         timer.timeout.connect(_fire)
         self._pending_timers.append(timer)
         timer.start(ECHO_DELAY_MS)
+
+    def _schedule_frame(self, fr: Frame, delay_ms: int) -> None:
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        def _fire(frame=fr, tm=timer) -> None:
+            try:
+                if not self._opened:
+                    return
+                self.bytes_in.emit(len(frame.raw))
+                self.frame_received.emit(frame)
+            finally:
+                try:
+                    self._pending_timers.remove(tm)
+                except ValueError:
+                    pass
+                tm.deleteLater()
+        timer.timeout.connect(_fire)
+        self._pending_timers.append(timer)
+        timer.start(delay_ms)
 
     def _cancel_all_timers(self) -> None:
         for tm in list(self._pending_timers):

@@ -23,6 +23,28 @@ CMD_RPI_POSITION = 0xF5
 F5_DATA_LEN = 0x19
 INVALID_S32 = -2147483648
 
+# 0xF7/F8 自主任务命令/状态帧
+CMD_AUTO_MISSION = 0xF7
+CMD_AUTO_STATUS = 0xF8
+AUTO_PROTOCOL_VER = 1
+AUTO_SAFETY_KEY = 0xA55A
+AUTO_FLAG_NO_XY_MOTION = 0x0008
+AUTO_STATUS_FLAG_RC_LOCKOUT = 0x0100
+AUTO_STATUS_FLAG_RC_FAILSAFE = 0x0200
+AUTO_STATUS_FLAG_RC_NO_SIGNAL = 0x0400
+AUTO_STATUS_FLAG_RC_HOLD_FRAME = 0x0800
+
+AUTO_CMD_QUERY_STATUS = 0x00
+AUTO_CMD_PRECHECK = 0x01
+AUTO_CMD_REQUEST_MODE2 = 0x02
+AUTO_CMD_DRYRUN_TAKEOFF_LAND = 0x03
+AUTO_CMD_START_LOW_TAKEOFF_LAND = 0x04
+AUTO_CMD_ABORT_LAND = 0x05
+AUTO_CMD_EMERGENCY_LOCK = 0x06
+AUTO_CMD_CLEAR_ERROR = 0x07
+AUTO_CMD_RELEASE_RC = 0x08
+AUTO_CMD_LOCK_RC = 0x09
+
 FLAG_SLAM_VALID = 0x01
 FLAG_TARGET_VALID = 0x02
 FLAG_VISUAL_MODE = 0x04
@@ -129,6 +151,56 @@ def build_f5_position(
     return build_frame(dest, CMD_RPI_POSITION, data)
 
 
+def build_f7_auto_cmd(
+    dest: int,
+    seq: int,
+    cmd: int,
+    *,
+    safety_key: int = 0,
+    height_cm: int = 40,
+    hold_ms: int = 3000,
+    flags: int = AUTO_FLAG_NO_XY_MOTION,
+    timeout_ms: int = 30000,
+    reserved: int = 0,
+    ver: int = AUTO_PROTOCOL_VER,
+) -> bytes:
+    """GUI → STM32 自主任务命令帧 0xF7。
+
+    DATA = ver:u8, seq:u16, cmd:u8, safety_key:u16, height_cm:u16,
+    hold_ms:u16, flags:u16, timeout_ms:u16, reserved:u16，全小端。
+    """
+    checks = {
+        "ver": (ver, 0, 0xFF),
+        "seq": (seq, 0, 0xFFFF),
+        "cmd": (cmd, 0, 0xFF),
+        "safety_key": (safety_key, 0, 0xFFFF),
+        "height_cm": (height_cm, 0, 0xFFFF),
+        "hold_ms": (hold_ms, 0, 0xFFFF),
+        "flags": (flags, 0, 0xFFFF),
+        "timeout_ms": (timeout_ms, 0, 0xFFFF),
+        "reserved": (reserved, 0, 0xFFFF),
+    }
+    for name, (value, lo, hi) in checks.items():
+        iv = int(value)
+        if not (lo <= iv <= hi):
+            raise ValueError(f"{name} out of range: {value}")
+    data = struct.pack(
+        "<BHBHHHHHH",
+        int(ver) & 0xFF,
+        int(seq) & 0xFFFF,
+        int(cmd) & 0xFF,
+        int(safety_key) & 0xFFFF,
+        int(height_cm) & 0xFFFF,
+        int(hold_ms) & 0xFFFF,
+        int(flags) & 0xFFFF,
+        int(timeout_ms) & 0xFFFF,
+        int(reserved) & 0xFFFF,
+    )
+    if len(data) != 0x10:
+        raise AssertionError(f"internal F7 length error: {len(data)}")
+    return build_frame(dest, CMD_AUTO_MISSION, data)
+
+
 
 # ---------------- 解析器 ----------------
 
@@ -155,6 +227,35 @@ class Frame:
             except Exception:
                 text = repr(self.data[1:])
         return color, text
+
+
+@dataclass(frozen=True)
+class AutoStatus:
+    """STM32 → GUI 自主任务状态帧 0xF8。"""
+
+    ver: int
+    status_seq: int
+    last_cmd_seq: int
+    state: int
+    last_cmd: int
+    error: int
+    flags: int
+    mode: int
+    unlock: int
+    voltage_100: int
+    alt_cm: int
+    state_ms: int
+    f5_age_ms: int
+    rx_f7_cnt: int
+    err_cnt: int
+
+
+def parse_f8_auto_status(data: bytes) -> AutoStatus:
+    """解析 0xF8 DATA；长度错误时抛 ValueError。"""
+    fmt = "<BHHBBHHBBHhHHHH"
+    if len(data) != struct.calcsize(fmt):
+        raise ValueError(f"bad F8 DATA length: {len(data)}")
+    return AutoStatus(*struct.unpack(fmt, data))
 
 
 class FrameParser:

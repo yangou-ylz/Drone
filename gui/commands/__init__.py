@@ -6,6 +6,7 @@
 from . import cmd_f1  # noqa: F401  导入即触发自注册
 from . import cmd_f2  # noqa: F401  导入即触发自注册
 from . import cmd_f3  # noqa: F401  导入即触发自注册
+from . import cmd_f7  # noqa: F401  自主任务状态机命令
 from . import cmd_placeholder  # noqa: F401  占位命令（飞行控制 / 模式切换）
 
-__all__ = ["cmd_f1", "cmd_f2", "cmd_f3", "cmd_placeholder"]
+__all__ = ["cmd_f1", "cmd_f2", "cmd_f3", "cmd_f7", "cmd_placeholder"]

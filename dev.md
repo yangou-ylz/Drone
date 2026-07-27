@@ -988,3 +988,65 @@ PC (Python) ──┐
 - **新 param_id**：扩 `0x04~0x08` 给 `PID3D_KP/KI/KD/SCALE_*/VEL_LIMIT`，做飞行中调 PID 参数（需考虑飞行中改参数的风险，建议加 mode2/未起飞 守门）
 - **Flash 持久化**：现在 RAM 写入断电丢，可加 `0xF3 SAVE` / `0xF4 LOAD`（要写 STM32 内部 Flash 扇区）
 - **下行参数读回**：加 `0xF5 READ id` → 飞控回 `0xA0` `P01=30.0` 形式，让 PC 主动查询当前值
+
+---
+
+## 阶段6：方案A自主运行状态机（2026-07-26）
+
+### 6.0 当前主线恢复点
+
+- 比赛自主逻辑采用 **方案A：STM32主导自主任务状态机，GUI只触发，树莓派只供位置**。
+- 官方/论坛建议保持 **定点模式 Mode2** 内开发自主运行；不切程控 Mode3，不切定高模式。
+- 当前临时调整：树莓派雷达/SLAM 仍在调试，前面的自主起飞/降落阶段 **先不用等树莓派位置**。
+- 当前先使用飞控/IMU内部已经实测误差较小的速度积分/现有位置观测路径；`0xF5` 接口保留，后续树莓派调好后再接入位置观测。
+- 第一阶段安全边界：只验证 `GUI → STM32 → 凌霄IMU官方一键指令` 的低高度起飞/悬停/降落/上锁；不接XY PID，不写 `rt_tar.vel_x/y/z`，不触发 `0x41` 水平速度控制。
+
+### 6.1 已落地协议
+
+- 新增 GUI 上行 `0xF7`：`AA FF F7 10 DATA[16] SC AC`。
+- `0xF7 DATA`：`ver:u8, seq:u16, cmd:u8, safety_key:u16, height_cm:u16, hold_ms:u16, flags:u16, timeout_ms:u16, reserved:u16`，全小端。
+- `0xF7 cmd`：查询、预检、请求Mode2、干运行、正式低高度起降、中止降落、强制上锁、清错误、释放遥控权、锁定遥控权。
+- `0xF7 cmd=0x08 RELEASE_RC` 需要 `safety_key=0xA55A`；只有 GUI 主动释放后，传统遥控器才允许重新干预。
+- `0xF7 cmd=0x09 LOCK_RC` 需要 `safety_key=0xA55A`；用于现场用遥控器安全接管/降落后，再由 GUI 重新收回 RC 控制权，回到 AUTO 锁定。
+- 新增 STM32 下行 `0xF8`：`AA FF F8 19 DATA[25] SC AC`，给 GUI 显示状态机状态、错误码、电压、模式、解锁、高度、`0xF5` 新鲜度、`0x0E` 外部速度/测高是否有效，以及 RC 控制权锁定、接收机帧、失控保护状态。
+- `0xA0` 文本日志继续保留，关键事件以 `AUTO ...` 前缀输出。
+
+### 6.2 已落地代码
+
+- 新增 `FcSrc/Auto_Mission.h/.c`：自主状态机、F7命令处理、预检、Mode2请求、干运行、正式低高度起降、中止/急停、F8状态生成。
+- 新增 RC 控制权仲裁：上电默认 `AUTO` 锁定 RC；`RC_Data_Task()`、`LX_FC_State_Task()`、`UserTask_OneKeyCmd()` 在未释放 RC 时不允许遥控器切模式、写 `rt_tar`、触发摇杆解锁/上锁/校准、触发旧 CH6/CH7/CH10 测试任务，也不会让旧遥控失联保护自动切 Mode3/返航抢占自主任务。
+- 修正 SBUS 失控位判定：SBUS flag bit4/bit5 分别为 frame lost / failsafe，飞控现在按 `0x30` 判定无效帧，不再用错误的 `0x08` 位。
+- GUI 状态语义修正：原“遥控器有信号”改为“遥控有效性”。新增 SBUS 保持帧检测：若接收机在发射机关机后仍持续输出完全相同的 hold 帧，F8 bit11 置位，GUI 显示“保持帧疑似关机”，不再误显示为正常有效遥控帧。
+- 注意：保持帧检测只作为 F8/GUI 诊断，不直接改写 `rc_in.no_signal/fail_safe` 的控制逻辑，避免遥控器开机但摇杆静止时误触发返航/降落。
+- `FcSrc/Uplink_Cmd.c`：新增 `0xF7` 小端解析并分发到 `Auto_Mission_OnCommand()`。
+- `FcSrc/ANO_DT_LX.c/.h`：新增 `0xF8` 下行状态帧、0x05高度缓存解析、`0x0E` 外接模块状态缓存、`Auto_Mission_Status_Send()`。
+- 预检/正式任务运行时保护：检查 `0x0D` 电压、上锁状态、`dt.wait_ck`、Mode2、`0x0E STA_G_VEL>=2`、`0x0E STA_ALT_ADD>=2`；正式任务中电压/Mode2/外部传感异常会进入中止降落或错误状态。
+- `FcSrc/Ano_Scheduler.c`：50Hz 调用 `Auto_Mission_Tick_50Hz()`，位置在 `UserTask_OneKeyCmd()` 之后、`Uplink_Cmd_Tick()` 之前。
+- `CMakeLists.txt`：加入 `FcSrc/Auto_Mission.c`。
+- `groundTest/ano_protocol.py`：新增 `build_f7_auto_cmd()`、`parse_f8_auto_status()`。
+- `groundTest/test_f7_f8_frame.py`：新增 F7黄金帧和F8解析离线测试。
+- GUI：新增命令面板 `gui/commands/cmd_f7.py`，面板内直接显示F8实时状态（状态机/错误码/Mode2/解锁/电压/高度/外部速度/外部测高/F5年龄/计数）；新增F8模型/解码/总线信号，主日志只记录F8关键字段变化，FakeWorker支持F7/F8离线仿真。
+
+### 6.3 下一步现场测试顺序
+
+1. 烧录后只打开 GUI，不装桨，先确认普通数据帧仍正常：`0x0D` 电压、`0x05` 高度、`0x06` 模式/解锁、`0x0E` 外接状态。
+2. GUI `自主 → 自主任务 F7` 先点“查询状态”，应收到 `AUTO QUERY` 和 `[F8] st=IDLE ... rc=AUTO_LOCK ...`；此时看“遥控有效性”：无接收帧/失控保护/保持帧疑似关机/有效遥控帧。
+3. 现场只测 RC 仲裁时，可以点“释放遥控权”观察 `RC控制权=RC可控`，然后点“锁定遥控权”观察恢复 `RC控制权=AUTO锁定`；比赛/自主测试阶段保持 AUTO 锁定。
+4. 点“预检”，电压/锁定/等待校验/`0x0E` 外部速度与测高正常时应收到 `AUTO PRECHECK_OK`，否则按 F8 错误码排查。
+5. 点“请求定点”，只允许切 Mode2，不解锁不起飞；若失败，先排查外部传感和 Mode2 条件。
+6. 点“起降干运行”，观察 F8 状态从 `DRY_UNLOCK → DRY_GROUND → DRY_TAKEOFF → DRY_HOLD → DRY_LAND → DRY_LOCK → DONE`。
+7. 以上全部通过后，再进入无桨官方指令链路测试；最后才允许有桨40cm低高度起降。
+
+### 6.4 固定安全规则
+
+- 正式低高度起降默认 `height_cm=40`、`hold_ms=3000`、`timeout_ms=30000`、`flags.bit3 no_xy_motion=1`。
+- `EMERGENCY_LOCK` 最高优先级：清零 `rt_tar` 并持续尝试 `FC_Lock()`。
+- `ABORT_LAND` 是常规中止，优先 `OneKey_Land()`，进入 `WAIT_LAND` 等待降落窗口或 IMU 已上锁，再请求 `FC_Lock()`；只有 `unlock=0` 后才允许进入 `DONE`。
+- 遥控器默认不参与自主流程；只有 `0xF7 cmd=0x08 RELEASE_RC` 带正确 safety_key 后，RC 才可重新切模式/摇杆控制/触发旧测试任务；`0xF7 cmd=0x09 LOCK_RC` 可重新禁止 RC 干预。比赛阶段不得释放 RC。
+- 未完成当前现场验收，不接回树莓派 `0xF5` 位置控制，不开放单轴/XY闭环。
+
+### 6.5 2026-07-26 无桨正式链路修正
+
+- 现场日志已验证：正式起降能执行到 `FC_Unlock()` 与 `OneKey_Takeoff(height_cm)`，IMU 回执“飞控解锁/已起飞”；`EMERGENCY_LOCK` 能立即上锁。
+- 修正 `ABORT_LAND` 状态顺序：此前中止后会从 `ABORT_LAND` 直接进 `LOCK_REQUEST/DONE`，可能出现 `DONE err=0x0060 unlock=1` 后才收到“飞控已上锁”。现在改为 `ABORT_LAND → WAIT_LAND → LOCK_REQUEST → DONE`，并且 `LOCK_REQUEST` 只有在 `fc_sta.unlock_sta==0` 后才 `DONE`。
+- 验收标准：无桨正式起降未被手动中止时，应完整看到 `WAIT_TAKEOFF → HOLD → LAND_REQ → WAIT_LAND → LOCK_REQ → DONE err=0x0000 unlock=0`；若点中止，应看到 `DONE err=0x0060 unlock=0`。

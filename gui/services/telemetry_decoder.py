@@ -16,6 +16,7 @@ import time
 from typing import Optional
 
 from gui.services.telemetry_models import (
+    AutoMissionStatusSample,
     AttitudeSample,
     BatterySample,
     FlightModeSample,
@@ -39,6 +40,7 @@ _FMT_0x32 = "<iii"    # POS_X/Y/Z (cm)，0x80000000 无效         → LEN=12
 _FMT_0x33 = "<hhh"    # SPEED_X/Y/Z (cm/s)，0x8000 无效         → LEN=6
 _FMT_0x34 = "<BHI"    # DIRECTION, ANGLE, DIST(cm)，0xFFFFFFFF 无效 → LEN=7
 _FMT_0xF6 = "<iiiiiiBIII"  # RPi镜像：cur/tar(s32 cm)+flags+rx/lenerr/ckerr
+_FMT_0xF8 = "<BHHBBHHBBHhHHHH"  # 自主状态：见 数据帧.md 0xF8
 
 # 通用传感器"数据无效"标志（官方手册）
 _INVALID_S32 = -2147483648    # 0x80000000（struct 按 s32 解出的值）
@@ -244,4 +246,47 @@ def decode_rpi_position_mirror(
         rx_cnt=rx_cnt,
         len_err_cnt=len_err,
         checksum_err_cnt=ck_err,
+    )
+
+
+def decode_auto_mission_status(
+    data: bytes, ts: Optional[float] = None
+) -> Optional[AutoMissionStatusSample]:
+    """解码 0xF8 自主任务状态帧。"""
+    if len(data) != struct.calcsize(_FMT_0xF8):
+        return None
+    (
+        ver,
+        status_seq,
+        last_cmd_seq,
+        state,
+        last_cmd,
+        error,
+        flags,
+        mode,
+        unlock,
+        voltage_100,
+        alt_cm,
+        state_ms,
+        f5_age_ms,
+        rx_f7_cnt,
+        err_cnt,
+    ) = struct.unpack(_FMT_0xF8, data)
+    return AutoMissionStatusSample(
+        ts=ts if ts is not None else time.monotonic(),
+        ver=ver,
+        status_seq=status_seq,
+        last_cmd_seq=last_cmd_seq,
+        state=state,
+        last_cmd=last_cmd,
+        error=error,
+        flags=flags,
+        mode=mode,
+        unlock=unlock,
+        voltage_100=voltage_100,
+        alt_cm=alt_cm,
+        state_ms=state_ms,
+        f5_age_ms=f5_age_ms,
+        rx_f7_cnt=rx_f7_cnt,
+        err_cnt=err_cnt,
     )

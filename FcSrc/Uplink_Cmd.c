@@ -8,6 +8,7 @@
 #include "User_Task.h" /* 提供 PID3D_GOAL_X/Y/Z_CM 宏作为默认值 */
 #include "McuConfig.h" /* 提供 UartSendLXIMU 宏 */
 #include "Drv_Uart.h"
+#include "Auto_Mission.h"
 
 #if UPLINK_CMD_EN
 
@@ -207,6 +208,11 @@ static s32 le_s32_read(const u8 *p)
     return (s32)u;
 }
 
+static u16 le_u16_read(const u8 *p)
+{
+    return (u16)((u16)p[0] | ((u16)p[1] << 8));
+}
+
 static void uplink_a0_send_uart2(u8 color, const char *str)
 {
     u8 buf[4 + 1 + STRING_INFO_MAX_LEN + 2];
@@ -389,6 +395,7 @@ void Uplink_Cmd_Init(void)
     s_f5_last_err = F5_ERR_NONE;
     s_pending_log_color = STRING_INFO_COLOR_GREEN;
     s_pending_log_str[0] = '\0';
+    Auto_Mission_Init();
 
 #if PARAM_WRITE_EN
     /* 默认值取自编译期宏；上电后保持不变直到收到 0xF2 帧 */
@@ -585,6 +592,30 @@ void Uplink_Cmd_Dispatch(u8 *data, u8 len)
 
     cmd = *(data + 2);
     data_len = *(data + 3);
+
+    /* ---------- 阶段6：0xF7 GUI自主任务命令 ---------- */
+    if (cmd == AUTO_F7_CMD)
+    {
+        _auto_mission_cmd_st auto_cmd;
+
+        if (data_len != AUTO_F7_DATA_LEN || len != AUTO_F7_TOTAL_LEN)
+        {
+            Auto_Mission_RecordProtocolError(AUTO_ERR_BAD_LEN, cmd);
+            return;
+        }
+
+        auto_cmd.ver = *(data + 4);
+        auto_cmd.seq = le_u16_read(data + 5);
+        auto_cmd.cmd = *(data + 7);
+        auto_cmd.safety_key = le_u16_read(data + 8);
+        auto_cmd.height_cm = le_u16_read(data + 10);
+        auto_cmd.hold_ms = le_u16_read(data + 12);
+        auto_cmd.flags = le_u16_read(data + 14);
+        auto_cmd.timeout_ms = le_u16_read(data + 16);
+        auto_cmd.reserved = le_u16_read(data + 18);
+        Auto_Mission_OnCommand(&auto_cmd);
+        return;
+    }
 
     /* ---------- 阶段1：0xF1 灵活帧 ---------- */
     if (cmd == 0xF1)

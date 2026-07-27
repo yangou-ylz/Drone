@@ -165,6 +165,67 @@ class RpiPositionMirrorSample:
         return bool(self.flags & 0x04)
 
 
+@dataclass(frozen=True)
+class AutoMissionStatusSample:
+    """0xF8 自主任务状态帧（STM32状态机下行）。"""
+
+    ts: float
+    ver: int
+    status_seq: int
+    last_cmd_seq: int
+    state: int
+    last_cmd: int
+    error: int
+    flags: int
+    mode: int
+    unlock: int
+    voltage_100: int
+    alt_cm: int
+    state_ms: int
+    f5_age_ms: int
+    rx_f7_cnt: int
+    err_cnt: int
+
+    @property
+    def voltage_v(self) -> float:
+        return self.voltage_100 / 100.0
+
+    @property
+    def mode2(self) -> bool:
+        return bool(self.flags & 0x0002)
+
+    @property
+    def no_xy_motion(self) -> bool:
+        return bool(self.flags & 0x0008)
+
+    @property
+    def active(self) -> bool:
+        return bool(self.flags & 0x0020)
+
+    @property
+    def ext_vel_ok(self) -> bool:
+        return bool(self.flags & 0x0040)
+
+    @property
+    def ext_alt_ok(self) -> bool:
+        return bool(self.flags & 0x0080)
+
+    @property
+    def rc_lockout(self) -> bool:
+        return bool(self.flags & 0x0100)
+
+    @property
+    def rc_failsafe(self) -> bool:
+        return bool(self.flags & 0x0200)
+
+    @property
+    def rc_no_signal(self) -> bool:
+        return bool(self.flags & 0x0400)
+
+    @property
+    def rc_hold_frame(self) -> bool:
+        return bool(self.flags & 0x0800)
+
 
 @dataclass(frozen=True)
 class PathPoint:

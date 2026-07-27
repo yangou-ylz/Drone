@@ -17,6 +17,7 @@ from PySide6.QtCore import QObject, Signal
 from gui.io.protocol import Frame
 from gui.services.path_tracker import PathTracker
 from gui.services.telemetry_decoder import (
+    decode_auto_mission_status,
     decode_attitude_euler,
     decode_attitude_quat,
     decode_battery,
@@ -48,6 +49,7 @@ class TelemetryBus(QObject):
     gen_position_updated = Signal(object)  # GenPositionSample (0x32)
     gen_velocity_updated = Signal(object)  # GenVelocitySample (0x33)
     gen_distance_updated = Signal(object)  # GenDistanceSample (0x34)
+    auto_mission_status_updated = Signal(object)  # AutoMissionStatusSample (0xF8)
     # 路径快照（PathSnapshot），仅在 render_enabled=True 且超过节流窗时发
     path_updated = Signal(object)
     # 状态/告警（level, text）
@@ -183,6 +185,10 @@ class TelemetryBus(QObject):
                 sample = decode_gen_distance(data, now)
                 if sample is not None:
                     self.gen_distance_updated.emit(sample)
+            elif cmd == 0xF8:
+                sample = decode_auto_mission_status(data, now)
+                if sample is not None:
+                    self.auto_mission_status_updated.emit(sample)
             else:
                 return  # 其余 cmd 不在关注范围
         except Exception as exc:  # 永不向上抛

@@ -43,6 +43,10 @@ from gui.services.alarm_service import AlarmService  # noqa: E402
 from gui.services.command_registry import REGISTRY  # noqa: E402
 from gui.services.config_service import ConfigService  # noqa: E402
 from gui.services.log_service import LogLevel, LogService  # noqa: E402
+from gui.services.auto_mission_labels import (  # noqa: E402
+    format_auto_a0_text,
+    format_auto_status_log,
+)
 from gui.services.frame_recorder import FrameRecorder  # noqa: E402
 from gui.services.rviz_process import RvizProcessManager  # noqa: E402
 from gui.services.telemetry_bus import STATUS_ERROR, STATUS_INFO, STATUS_WARN, TelemetryBus  # noqa: E402
@@ -138,7 +142,9 @@ class MainWindow(QMainWindow):
         # ---- 3. UI 组装 ----
         self._connection_bar = ConnectionBar(self._config, self)
         self._log_view = LogView(self._log, self)
+        self._log_view.setMinimumHeight(220)
         self._command_panel = CommandPanel(self)
+        self._command_panel.setMinimumHeight(180)
         self._command_panel.set_enabled_for_link(False)
         self._command_panel.command_send_requested.connect(self._on_command_send_requested)
 
@@ -226,6 +232,8 @@ class MainWindow(QMainWindow):
         # 后台积分常驻，仅 set_render_enabled 控制是否对外广播 path_updated（D3）
         self._bus = TelemetryBus(parent=self)
         self._bus.status.connect(self._on_bus_status)
+        self._last_auto_status_key = None
+        self._bus.auto_mission_status_updated.connect(self._on_auto_mission_status)
         # 必须先建 Dock，再 build_menu，因为菜单要绑定 Dock 的勾选状态
         self._feature_docks: dict[str, QDockWidget] = {}
         self._feature_widgets: dict[str, QWidget] = {}
@@ -947,7 +955,8 @@ class MainWindow(QMainWindow):
         color_tag = {0: "黑", 1: "红", 2: "绿"}.get(color, str(color))
         # 红字默认归 WARN，命令层（阶段 D 的 UNK 等）可再升级到 ERROR
         level = LogLevel.WARN if color == 1 else LogLevel.INFO
-        self._log.log(level, "回执", f"[A0 {color_tag}] {text}")
+        display_text = format_auto_a0_text(text)
+        self._log.log(level, "回执", f"[A0 {color_tag}] {display_text}")
         # 同步交给 AckMatcher 做发送-回执配对
         try:
             self._ack.handle_text(text)
@@ -963,6 +972,26 @@ class MainWindow(QMainWindow):
             self._alarm.warn("遥测", text)
         else:
             self._log.info("遥测", text)
+
+    @Slot(object)
+    def _on_auto_mission_status(self, sample) -> None:
+        """0xF8 自主任务状态变化日志。周期帧不刷屏，只在关键字段变化时输出。"""
+        try:
+            panel = self._command_panel._panels.get(0xF7)
+            if panel is not None and hasattr(panel, "on_auto_mission_status"):
+                panel.on_auto_mission_status(sample)
+        except Exception as exc:
+            self._log.warn("自主", f"F7 面板状态刷新失败：{exc}")
+
+        key = (sample.state, sample.error, sample.last_cmd_seq, sample.rx_f7_cnt, sample.err_cnt)
+        if key == self._last_auto_status_key:
+            return
+        self._last_auto_status_key = key
+        msg = format_auto_status_log(sample)
+        if sample.error:
+            self._log.warn("自主", msg)
+        else:
+            self._log.info("自主", msg)
 
     # ---- 命令发送 / 回执 ----
     def _on_command_send_requested(self, cmd_id: int, params: dict) -> None:

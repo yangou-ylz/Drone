@@ -20,8 +20,11 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -94,7 +97,13 @@ class CommandPanel(QWidget):
         root.addLayout(top)
 
         self._stack = QStackedWidget()
-        root.addWidget(self._stack, 1)
+        self._stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setWidget(self._stack)
+        root.addWidget(self._scroll, 1)
 
     def _populate(self) -> None:
         self._cat_combo.blockSignals(True)

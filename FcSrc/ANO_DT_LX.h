@@ -76,4 +76,6 @@ void PAR_Back(u8 dest_addr, _par_st *par);
 void String_Info_Send(u8 dest_addr, u8 color, const char *str);
 // 标记发送0xF6树莓派位置镜像调试帧（UART5->IMU->数传->GUI）
 void Rpi_Position_Mirror_Send(u8 dest_addr);
+// 标记发送0xF8自主任务状态帧（UART5->IMU->数传->GUI）
+void Auto_Mission_Status_Send(u8 dest_addr);
 #endif

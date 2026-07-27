@@ -48,6 +48,7 @@ add_executable(ANO_LX.elf
   FcSrc/Ano_Scheduler.c
   FcSrc/User_Task.c
   FcSrc/Uplink_Cmd.c
+  FcSrc/Auto_Mission.c
   FcSrc/ANO_LX.c
   FcSrc/ANO_DT_LX.c
   FcSrc/LX_FC_EXT_Sensor.c

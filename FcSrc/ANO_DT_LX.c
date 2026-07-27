@@ -6,6 +6,7 @@
 #include "LX_FC_State.h"
 #include "Drv_Uart.h"
 #include "Uplink_Cmd.h" /* 上行指令分发：F1/F2/F3 + RPi 0xF5 */
+#include "Auto_Mission.h"
 
 /*==========================================================================
  * 描述    ：凌霄飞控通信主程序
@@ -46,6 +47,18 @@ static void add_u32_le(u8 *_cnt, u8 send_buffer[], u32 val)
 	send_buffer[(*_cnt)++] = BYTE1(val);
 	send_buffer[(*_cnt)++] = BYTE2(val);
 	send_buffer[(*_cnt)++] = BYTE3(val);
+}
+
+static void add_u16_le(u8 *_cnt, u8 send_buffer[], u16 val)
+{
+	send_buffer[(*_cnt)++] = BYTE0(val);
+	send_buffer[(*_cnt)++] = BYTE1(val);
+}
+
+static void add_s16_le(u8 *_cnt, u8 send_buffer[], s16 val)
+{
+	send_buffer[(*_cnt)++] = BYTE0(val);
+	send_buffer[(*_cnt)++] = BYTE1(val);
 }
 
 // 将 u8 转为两位大写十六进制 ASCII，写入 buf[0]和buf[1]
@@ -102,6 +115,10 @@ void ANO_DT_Init(void)
 	dt.fun[UPLINK_F6_CMD].D_Addr = 0xff;
 	dt.fun[UPLINK_F6_CMD].fre_ms = 0;
 	dt.fun[UPLINK_F6_CMD].time_cnt_ms = 0;
+	// 0xF8：自主任务状态帧（STM32状态机 -> GUI）
+	dt.fun[AUTO_F8_CMD].D_Addr = 0xff;
+	dt.fun[AUTO_F8_CMD].fre_ms = 0;
+	dt.fun[AUTO_F8_CMD].time_cnt_ms = 0;
 }
 
 // 数据发送接口
@@ -259,6 +276,22 @@ static void ANO_DT_LX_Data_Receive_Anl(u8 *data, u8 len)
 			fc_vel.byte_data[i] = *(data + 4 + i);
 		}
 	}
+	// 高度数据（融合高度/附加测高/状态）
+	else if (*(data + 2) == 0X05)
+	{
+		for (u8 i = 0; i < 9; i++)
+		{
+			fc_alt.byte_data[i] = *(data + 4 + i);
+		}
+	}
+	// 外接模块工作状态（通用速度/位置/GPS/附加测高）
+	else if (*(data + 2) == 0X0E)
+	{
+		for (u8 i = 0; i < 4; i++)
+		{
+			fc_ext_status.byte_data[i] = *(data + 4 + i);
+		}
+	}
 	// XY位置偏移（相对起飞点，单位cm）
 	else if (*(data + 2) == 0X08)
 	{
@@ -393,6 +426,11 @@ static void ANO_DT_LX_Data_Receive_Anl(u8 *data, u8 len)
 		/* 0xF5：树莓派位置帧，阶段3a只保存快照和回0xA0日志 */
 		Uplink_Cmd_Dispatch(data, len);
 	}
+	else if (*(data + 2) == AUTO_F7_CMD)
+	{
+		/* 0xF7：GUI自主任务命令，解析后交给Auto_Mission状态机 */
+		Uplink_Cmd_Dispatch(data, len);
+	}
 }
 
 //===================================================================
@@ -513,6 +551,27 @@ static void Add_Send_Data(u8 frame_num, u8 *_cnt, u8 send_buffer[])
 		add_u32_le(_cnt, send_buffer, snap.checksum_err_cnt);
 	}
 	break;
+	case AUTO_F8_CMD: // 自主任务状态帧，供GUI显示/日志
+	{
+		_auto_mission_status_st st;
+		Auto_Mission_GetStatus(&st);
+		send_buffer[(*_cnt)++] = st.ver;
+		add_u16_le(_cnt, send_buffer, st.status_seq);
+		add_u16_le(_cnt, send_buffer, st.last_cmd_seq);
+		send_buffer[(*_cnt)++] = st.state;
+		send_buffer[(*_cnt)++] = st.last_cmd;
+		add_u16_le(_cnt, send_buffer, st.error);
+		add_u16_le(_cnt, send_buffer, st.flags);
+		send_buffer[(*_cnt)++] = st.mode;
+		send_buffer[(*_cnt)++] = st.unlock;
+		add_u16_le(_cnt, send_buffer, st.voltage_100);
+		add_s16_le(_cnt, send_buffer, st.alt_cm);
+		add_u16_le(_cnt, send_buffer, st.state_ms);
+		add_u16_le(_cnt, send_buffer, st.f5_age_ms);
+		add_u16_le(_cnt, send_buffer, st.rx_f7_cnt);
+		add_u16_le(_cnt, send_buffer, st.err_cnt);
+	}
+	break;
 	default:
 		break;
 	}
@@ -627,6 +686,12 @@ void Rpi_Position_Mirror_Send(u8 dest_addr)
 	dt.fun[UPLINK_F6_CMD].WTS = 1;
 }
 
+void Auto_Mission_Status_Send(u8 dest_addr)
+{
+	dt.fun[AUTO_F8_CMD].D_Addr = dest_addr;
+	dt.fun[AUTO_F8_CMD].WTS = 1;
+}
+
 // 若指令没发送成功，会持续重新发送，间隔50ms。
 static u8 repeat_cnt;
 static inline void CK_Back_Check()
@@ -676,6 +741,7 @@ void ANO_LX_Data_Exchange_Task(float dT_s)
 	Check_To_Send(0x0d);
 	Check_To_Send(0xa0);
 	Check_To_Send(UPLINK_F6_CMD);
+	Check_To_Send(AUTO_F8_CMD);
 }
 
 //===================================================================

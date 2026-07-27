@@ -16,6 +16,7 @@ typedef struct
 	u16 signal_fre;
 	u8 no_signal;
 	u8 fail_safe;
+	u8 hold_frame; // SBUS持续输出完全相同的保持帧，常见于发射机关机但接收机仍输出hold帧
 	_rc_ch_un rc_ch;
 	u16 signal_cnt_tmp;
 	u8 rc_in_mode_tmp;

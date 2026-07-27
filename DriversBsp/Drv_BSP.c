@@ -17,6 +17,8 @@
 #include "Drv_Timer.h"
 #include "Uplink_Cmd.h" /* 上行指令模块（阶段1骨架） */
 
+#define SBUS_HOLD_FRAME_THRESHOLD 160u // 约1.5~2s完全不变，判定为接收机hold保持帧
+
 u8 All_Init()
 {
 	DrvSysInit();
@@ -64,6 +66,7 @@ void DrvRcInputInit(void)
 	// 先标记位丢失
 	rc_in.no_signal = 1;
 	rc_in.fail_safe = 1;
+	rc_in.hold_frame = 0;
 }
 void DrvPpmGetOneCh(u16 data)
 {
@@ -138,11 +141,56 @@ void DrvSbusGetOneByte(u8 data)
 			rc_in.sbus_ch[15] = (s16)datatmp[22] << 3 | (datatmp[21] >> 5);
 			rc_in.sbus_flag = datatmp[23];
 
+			{
+				static s16 last_sbus_ch[16];
+				static u8 last_sbus_flag;
+				static u8 have_last;
+				static u16 same_cnt;
+				u8 same = 1;
+				if (have_last == 0)
+				{
+					same = 0;
+					have_last = 1;
+				}
+				else if (last_sbus_flag != rc_in.sbus_flag)
+				{
+					same = 0;
+				}
+				else
+				{
+					for (u8 i = 0; i < 16; i++)
+					{
+						if (last_sbus_ch[i] != rc_in.sbus_ch[i])
+						{
+							same = 0;
+							break;
+						}
+					}
+				}
+				if (same != 0)
+				{
+					if (same_cnt < 0xFFFFu)
+					{
+						same_cnt++;
+					}
+				}
+				else
+				{
+					same_cnt = 0;
+					for (u8 i = 0; i < 16; i++)
+					{
+						last_sbus_ch[i] = rc_in.sbus_ch[i];
+					}
+					last_sbus_flag = rc_in.sbus_flag;
+				}
+				rc_in.hold_frame = (same_cnt >= SBUS_HOLD_FRAME_THRESHOLD) ? 1u : 0u;
+			}
+
 			// user
 			//
-			if (rc_in.sbus_flag & 0x08)
+			if (rc_in.sbus_flag & 0x30)
 			{
-				// 如果有数据且能接收到有失控标记，则不处理，转嫁成无数据失控。
+				// SBUS bit4=failsafe, bit5=frame lost；不计入有效帧，转嫁成无数据失控。
 			}
 			else
 			{
@@ -179,6 +227,7 @@ static void rcSignalCheck(float *dT_s)
 		if (rc_in.signal_fre < 5)
 		{
 			rc_in.no_signal = 1;
+			rc_in.hold_frame = 0;
 		}
 		else
 		{
@@ -205,6 +254,10 @@ static void rcSignalCheck(float *dT_s)
 		else
 		{
 			rc_in.sig_mode = rc_in.rc_in_mode_tmp;
+			if (rc_in.sig_mode != 2)
+			{
+				rc_in.hold_frame = 0;
+			}
 		}
 		//==
 		rc_in.signal_cnt_tmp = 0;

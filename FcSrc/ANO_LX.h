@@ -64,6 +64,35 @@ typedef union
     _fc_bat_st st_data; // 结构化数据（电池状态）
 } _fc_bat_un;
 
+// 0x05：高度数据（IMU下发，单位cm）
+typedef struct
+{
+    s32 alt_fu_cm;  // 融合后高度
+    s32 alt_add_cm; // 附加测距高度
+    u8 alt_sta;     // 高度状态
+} __attribute__((__packed__)) _fc_alt_st;
+
+typedef union
+{
+    u8 byte_data[9];
+    _fc_alt_st st_data;
+} _fc_alt_un;
+
+// 0x0E：外接模块工作状态（IMU下发）
+typedef struct
+{
+    u8 sta_g_vel;   // 通用速度传感器状态：0无数据/1不可用/2正常/3良好
+    u8 sta_g_pos;   // 通用位置传感器状态
+    u8 sta_gps;     // GPS状态
+    u8 sta_alt_add; // 附加测距高度状态
+} __attribute__((__packed__)) _fc_ext_status_st;
+
+typedef union
+{
+    u8 byte_data[4];
+    _fc_ext_status_st st_data;
+} _fc_ext_status_un;
+
 // 0x03：姿态数据（欧拉角）
 typedef struct
 {
@@ -142,6 +171,8 @@ extern _fc_vel_un fc_vel;
 extern _fc_pos_un fc_pos;
 extern _rt_tar_un rt_tar;
 extern _fc_bat_un fc_bat;
+extern _fc_alt_un fc_alt;
+extern _fc_ext_status_un fc_ext_status;
 extern _pwm_st pwm_to_esc;
 //==函数声明
 // static
