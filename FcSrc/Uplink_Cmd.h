@@ -39,6 +39,10 @@
  *   - STM32 只在已解锁、Mode2、外部速度/测高正常时启动现有 PID3D；
  *     不改树莓派0xF5，不重写位置环。
  *
+ * 阶段7b：0xFA GUI键盘低速速度控制
+ *   - 帧格式：AA FF FA 0E | ver seq cmd key vx/vy/yaw(s16) flags | SC AC
+ *   - 只写 vel_x/vel_y/yaw_dps，rol/pit/thr/vel_z 固定清零；300ms超时自动停。
+ *
  * 触发条件：
  *   - Uplink_Cmd_Init 在 All_Init 末尾调用一次；
  *   - Uplink_Cmd_Tick 在 50Hz 调度器内调用；

@@ -1012,6 +1012,8 @@ class MainWindow(QMainWindow):
                 self._log.info("命令", f"已取消：{cmd.name} ({desc_text})")
                 return
 
+        silent = bool(params.get("_silent", False))
+
         # 2. 组帧（捕获参数校验异常）
         try:
             frame = cmd.build_frame(params)
@@ -1021,14 +1023,16 @@ class MainWindow(QMainWindow):
 
         desc = cmd.describe_params(params)
         # 3. 登记 AckMatcher（先登记再发送，避免极快回执先到导致漏匹配）
-        token = self._ack.track(cmd, desc)
+        token = 0
+        if not silent:
+            token = self._ack.track(cmd, desc)
 
-        # 面板立即进入等待态（黄灯）
-        self._command_panel.set_ack_state(
-            cmd.cmd_id,
-            "waiting",
-            f"#{token} 等待回执…  {desc}",
-        )
+            # 面板立即进入等待态（黄灯）
+            self._command_panel.set_ack_state(
+                cmd.cmd_id,
+                "waiting",
+                f"#{token} 等待回执…  {desc}",
+            )
 
         # 4. 入队发送（跨线程）
         # 注意：Python 原生 bytes 不是注册的 QMetaType，跨线程必须用 QByteArray 包一层
@@ -1036,7 +1040,8 @@ class MainWindow(QMainWindow):
             self._worker, "send_bytes", Qt.ConnectionType.QueuedConnection,
             Q_ARG(QByteArray, QByteArray(frame)),
         )
-        self._log.info("发送", f"#{token} {cmd.name}  {desc}  ({len(frame)}B)")
+        if not silent:
+            self._log.info("发送", f"#{token} {cmd.name}  {desc}  ({len(frame)}B)")
 
     @Slot(int, int, bool, int, str, str)
     def _on_ack_matched(self, token: int, cmd_id: int, ok: bool,

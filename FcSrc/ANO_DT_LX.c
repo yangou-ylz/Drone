@@ -409,6 +409,7 @@ static void ANO_DT_LX_Data_Receive_Anl(u8 *data, u8 len)
 	// 0xF5：树莓派位置帧，当前仅解析/日志，不接控制输出
 	// 0xF7：GUI自主任务命令
 	// 0xF9：GUI相对位移命令
+	// 0xFA：GUI键盘低速速度命令
 	// 注意：不要用 0xE0/0xE2，那两个 CMD 已被上方原生分支占用（CK_Back 协议）。
 	else if (*(data + 2) == 0xF1)
 	{
@@ -436,6 +437,11 @@ static void ANO_DT_LX_Data_Receive_Anl(u8 *data, u8 len)
 	else if (*(data + 2) == AUTO_F9_CMD)
 	{
 		/* 0xF9：GUI相对位移命令，解析后交给Auto_Mission位移入口 */
+		Uplink_Cmd_Dispatch(data, len);
+	}
+	else if (*(data + 2) == AUTO_FA_CMD)
+	{
+		/* 0xFA：GUI键盘低速速度命令，解析后交给Auto_Mission速度入口 */
 		Uplink_Cmd_Dispatch(data, len);
 	}
 	}

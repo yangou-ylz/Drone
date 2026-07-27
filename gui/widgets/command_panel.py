@@ -51,6 +51,8 @@ class CommandPanel(QWidget):
     # ---- 公共 ----
     def set_enabled_for_link(self, linked: bool) -> None:
         """串口连接状态变化时由主窗口调用，向所有已构造的面板广播。"""
+        if self._linked and not linked:
+            self._deactivate_current_panel("串口断开")
         self._linked = bool(linked)
         for panel in self._panels.values():
             try:
@@ -77,6 +79,19 @@ class CommandPanel(QWidget):
     def current_command(self) -> Command | None:
         cid = self._cmd_combo.currentData()
         return REGISTRY.get(cid) if isinstance(cid, int) else None
+
+    def _deactivate_current_panel(self, reason: str) -> None:
+        panel = self._stack.currentWidget()
+        if panel is None or not hasattr(panel, "on_panel_deactivated"):
+            return
+        try:
+            panel.on_panel_deactivated(reason)
+        except Exception:
+            pass
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._deactivate_current_panel("页面隐藏")
+        super().hideEvent(event)
 
     # ---- UI ----
     def _build_ui(self) -> None:
@@ -122,6 +137,7 @@ class CommandPanel(QWidget):
 
     # ---- 槽 ----
     def _on_category_changed(self, category: str) -> None:
+        self._deactivate_current_panel("命令分类切换")
         self._cmd_combo.blockSignals(True)
         self._cmd_combo.clear()
         for cmd in REGISTRY.in_category(category):
@@ -134,6 +150,7 @@ class CommandPanel(QWidget):
         cmd = self.current_command()
         if cmd is None:
             return
+        old_panel = self._stack.currentWidget()
         # 懒构造面板并加入栈
         if cmd.cmd_id not in self._panels:
             panel = cmd.create_panel(self)
@@ -150,4 +167,10 @@ class CommandPanel(QWidget):
             self._panels[cmd.cmd_id] = panel
             self._panel_index[cmd.cmd_id] = self._stack.addWidget(panel)
             panel.set_enabled_for_link(self._linked)
+        new_panel = self._panels.get(cmd.cmd_id)
+        if old_panel is not None and old_panel is not new_panel and hasattr(old_panel, "on_panel_deactivated"):
+            try:
+                old_panel.on_panel_deactivated("命令切换")
+            except Exception:
+                pass
         self._stack.setCurrentIndex(self._panel_index[cmd.cmd_id])

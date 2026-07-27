@@ -6,7 +6,11 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Signal
+import json
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -45,8 +49,14 @@ from ..io.protocol import (
     AUTO_MOVE_CMD_START,
     AUTO_MOVE_CMD_STOP,
     AUTO_MOVE_LIMIT_CM,
+    AUTO_VEL_CMD_QUERY,
+    AUTO_VEL_CMD_SET,
+    AUTO_VEL_CMD_STOP,
+    AUTO_VEL_LIMIT_CMPS,
+    AUTO_YAW_LIMIT_DPS,
     CMD_AUTO_MISSION,
     CMD_AUTO_MOVE,
+    CMD_AUTO_VELOCITY,
 )
 from ..services.auto_mission_labels import (
     error_label,
@@ -81,6 +91,73 @@ F9_LABELS = {
 }
 
 AUTO_STATE_MOVE_HOLD = 24
+_KEYMAP_FILE = Path(__file__).resolve().parents[1] / "keymaps" / "velocity_keys.json"
+
+
+class _StickIndicator(QWidget):
+    """低速水平速度按键状态显示。"""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._x = 0.0
+        self._y = 0.0
+        self.setMinimumSize(150, 150)
+
+    def set_vector(self, x: float, y: float) -> None:
+        self._x = max(-1.0, min(1.0, float(x)))
+        self._y = max(-1.0, min(1.0, float(y)))
+        self.update()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(10, 10, -10, -10)
+        side = min(rect.width(), rect.height())
+        cx = rect.center().x()
+        cy = rect.center().y()
+        radius = side * 0.42
+        painter.setPen(QPen(QColor("#9E9E9E"), 2))
+        painter.setBrush(QColor("#F7F7F7"))
+        painter.drawEllipse(int(cx - radius), int(cy - radius), int(radius * 2), int(radius * 2))
+        painter.setPen(QPen(QColor("#C0C0C0"), 1))
+        painter.drawLine(int(cx - radius), cy, int(cx + radius), cy)
+        painter.drawLine(cx, int(cy - radius), cx, int(cy + radius))
+        knob_r = max(10, int(side * 0.07))
+        kx = cx + self._x * radius
+        ky = cy - self._y * radius
+        painter.setPen(QPen(QColor("#2E7D32"), 2))
+        painter.setBrush(QColor("#66BB6A"))
+        painter.drawEllipse(int(kx - knob_r), int(ky - knob_r), knob_r * 2, knob_r * 2)
+
+
+class _YawIndicator(QWidget):
+    """低速 yaw 按键状态显示。"""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._yaw = 0.0
+        self.setMinimumSize(150, 70)
+
+    def set_yaw(self, yaw: float) -> None:
+        self._yaw = max(-1.0, min(1.0, float(yaw)))
+        self.update()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(14, 18, -14, -18)
+        cy = rect.center().y()
+        left = rect.left()
+        right = rect.right()
+        painter.setPen(QPen(QColor("#9E9E9E"), 4))
+        painter.drawLine(left, cy, right, cy)
+        painter.setPen(QPen(QColor("#D0D0D0"), 1))
+        painter.drawLine((left + right) // 2, cy - 14, (left + right) // 2, cy + 14)
+        knob_r = 11
+        x = (left + right) / 2.0 + self._yaw * ((right - left) / 2.0)
+        painter.setPen(QPen(QColor("#1565C0"), 2))
+        painter.setBrush(QColor("#42A5F5"))
+        painter.drawEllipse(int(x - knob_r), int(cy - knob_r), knob_r * 2, knob_r * 2)
 
 
 class CmdAutoControl(Command):
@@ -119,6 +196,25 @@ class AutoControlPanel(CommandPanelBase):
         self._route_index = 0
         self._route_waiting_seq: int | None = None
         self._route_timer_pending = False
+        self._vel_seq = 1
+        self._vel_enabled = False
+        self._vel_pressed: set[int] = set()
+        self._vel_last_sent = (0.0, 0.0, 0.0)
+        self._vel_key_map = {
+            "forward": int(Qt.Key.Key_Up),
+            "back": int(Qt.Key.Key_Down),
+            "left": int(Qt.Key.Key_Left),
+            "right": int(Qt.Key.Key_Right),
+            "yaw_left": int(Qt.Key.Key_A),
+            "yaw_right": int(Qt.Key.Key_D),
+        }
+        self._load_velocity_keymap()
+        self._capture_steps: list[tuple[str, str]] = []
+        self._capture_index = -1
+        self._vel_timer = QTimer(self)
+        self._vel_timer.setInterval(100)
+        self._vel_timer.timeout.connect(self._send_velocity_from_keys)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -211,6 +307,8 @@ class AutoControlPanel(CommandPanelBase):
         self._btn_move.setStyleSheet("font-weight:bold;color:#C62828;")
         self._btn_stop_move = self._add_f9_button(move_buttons, "停止位移", AUTO_MOVE_CMD_STOP, 1, 0)
         self._btn_stop_move.setStyleSheet("font-weight:bold;color:#EF6C00;")
+        self._add_f7_button(move_buttons, "一键起飞保持", AUTO_CMD_TAKEOFF_HOLD, 2, 0)
+        self._add_f7_button(move_buttons, "一键降落", AUTO_CMD_LAND_ONLY, 2, 1)
         move_body.addLayout(move_buttons, 2)
         move_body.addWidget(self._separator())
 
@@ -260,6 +358,8 @@ class AutoControlPanel(CommandPanelBase):
         self._route_status = QLabel("未开始")
         self._route_status.setStyleSheet("color:#777;")
         route_buttons.addWidget(self._route_status, 1, 0, 1, 2)
+        self._add_f7_button(route_buttons, "一键起飞保持", AUTO_CMD_TAKEOFF_HOLD, 2, 0)
+        self._add_f7_button(route_buttons, "一键降落", AUTO_CMD_LAND_ONLY, 2, 1)
         route_body.addLayout(route_buttons, 2)
         route_body.addWidget(self._separator())
 
@@ -284,6 +384,69 @@ class AutoControlPanel(CommandPanelBase):
         route_body.addLayout(route_settings, 1)
         route.addLayout(route_body)
         root.addWidget(route_box)
+
+        vel_box = QGroupBox("键盘低速速度控制")
+        vel = QVBoxLayout(vel_box)
+        self._vel_confirm = QCheckBox("确认飞机已稳定悬停，允许键盘实时速度控制")
+        self._vel_confirm.setStyleSheet("color:#C62828;font-weight:bold;")
+        vel.addWidget(self._vel_confirm)
+
+        vel_body = QHBoxLayout()
+        vel_vis = QVBoxLayout()
+        self._stick = _StickIndicator()
+        self._yaw_indicator = _YawIndicator()
+        vel_vis.addWidget(self._stick)
+        vel_vis.addWidget(self._yaw_indicator)
+        vel_body.addLayout(vel_vis, 1)
+        vel_body.addWidget(self._separator())
+
+        vel_settings = QVBoxLayout()
+        vel_quick = QGridLayout()
+        self._add_f7_button(vel_quick, "一键起飞保持", AUTO_CMD_TAKEOFF_HOLD, 0, 0)
+        self._add_f7_button(vel_quick, "一键降落", AUTO_CMD_LAND_ONLY, 0, 1)
+        vel_settings.addLayout(vel_quick)
+
+        self._btn_vel_enable = QPushButton("启用键盘控制")
+        self._btn_vel_enable.setMinimumHeight(32)
+        self._btn_vel_enable.setStyleSheet("font-weight:bold;color:#C62828;")
+        self._btn_vel_enable.clicked.connect(lambda _checked=False: self._enable_velocity_control())
+        vel_settings.addWidget(self._btn_vel_enable)
+        self._buttons.append(self._btn_vel_enable)
+
+        self._btn_vel_disable = QPushButton("关闭键盘控制")
+        self._btn_vel_disable.setMinimumHeight(32)
+        self._btn_vel_disable.setStyleSheet("font-weight:bold;color:#EF6C00;")
+        self._btn_vel_disable.clicked.connect(lambda _checked=False: self._disable_velocity_control())
+        vel_settings.addWidget(self._btn_vel_disable)
+        self._buttons.append(self._btn_vel_disable)
+
+        self._btn_vel_capture = QPushButton("按键校准")
+        self._btn_vel_capture.setMinimumHeight(32)
+        self._btn_vel_capture.clicked.connect(lambda _checked=False: self._start_key_capture())
+        vel_settings.addWidget(self._btn_vel_capture)
+        self._buttons.append(self._btn_vel_capture)
+
+        self._btn_vel_query = QPushButton("查询速度控制")
+        self._btn_vel_query.setMinimumHeight(32)
+        self._btn_vel_query.clicked.connect(lambda _checked=False: self._send_velocity_query())
+        vel_settings.addWidget(self._btn_vel_query)
+        self._buttons.append(self._btn_vel_query)
+
+        self._linear_speed = self._speed_spin(15.0, 1.0, float(AUTO_VEL_LIMIT_CMPS), 1.0, " cm/s")
+        vel_settings.addWidget(self._setting_pair("线速度", self._linear_speed))
+        self._yaw_speed = self._speed_spin(10.0, 1.0, float(AUTO_YAW_LIMIT_DPS), 1.0, " deg/s")
+        vel_settings.addWidget(self._setting_pair("角速度", self._yaw_speed))
+        self._vel_values = QLabel("vx=0.0 cm/s  vy=0.0 cm/s  yaw=0.0 deg/s")
+        self._vel_values.setStyleSheet("font-weight:bold;color:#555;")
+        vel_settings.addWidget(self._vel_values)
+        self._key_hint = QLabel("默认：方向键控制前后左右，A/D 控制偏航。点击启用后面板会获取键盘焦点。")
+        self._key_hint.setWordWrap(True)
+        self._key_hint.setStyleSheet("color:#777;")
+        vel_settings.addWidget(self._key_hint)
+        vel_settings.addStretch(1)
+        vel_body.addLayout(vel_settings, 1)
+        vel.addLayout(vel_body)
+        root.addWidget(vel_box)
 
         status_row = QHBoxLayout()
         self._lamp = QLabel("●")
@@ -325,6 +488,23 @@ class AutoControlPanel(CommandPanelBase):
         sb.setValue(default)
         sb.setSuffix(" cm")
         sb.setMinimumWidth(105)
+        return sb
+
+    def _speed_spin(
+        self,
+        default: float,
+        low: float,
+        high: float,
+        step: float,
+        suffix: str,
+    ) -> StableDoubleSpinBox:
+        sb = StableDoubleSpinBox()
+        sb.setRange(low, high)
+        sb.setDecimals(1)
+        sb.setSingleStep(step)
+        sb.setValue(default)
+        sb.setSuffix(suffix)
+        sb.setMinimumWidth(115)
         return sb
 
     def _separator(self) -> QFrame:
@@ -407,7 +587,7 @@ class AutoControlPanel(CommandPanelBase):
         self._status.setText(message or default)
 
     def on_child_ack_state(self, cmd_id: int, state: str, message: str = "") -> None:
-        if cmd_id in (CMD_AUTO_MISSION, CMD_AUTO_MOVE):
+        if cmd_id in (CMD_AUTO_MISSION, CMD_AUTO_MOVE, CMD_AUTO_VELOCITY):
             self.set_ack_state(state, message)
         if cmd_id == CMD_AUTO_MOVE and self._route_active and state in (
             self.STATE_WARN,
@@ -417,6 +597,8 @@ class AutoControlPanel(CommandPanelBase):
             self._route_active = False
             self._route_timer_pending = False
             self._set_route_status(f"巡航中止：{message}", "#C62828")
+        if cmd_id == CMD_AUTO_VELOCITY and state in (self.STATE_FAIL, self.STATE_TIMEOUT):
+            self._disable_velocity_control(send_stop=False, reason=f"速度控制异常：{message}")
 
     def on_auto_mission_status(self, sample) -> None:
         error_ok = sample.error == 0
@@ -605,6 +787,198 @@ class AutoControlPanel(CommandPanelBase):
         self._route_timer_pending = False
         self._route_waiting_seq = None
         self._set_route_status(text, "#EF6C00")
+
+    def on_panel_deactivated(self, reason: str = "页面切换") -> None:
+        """页面切走时只释放键盘速度；位移/巡航必须继续执行，除非用户点停止。"""
+        if self._capture_index >= 0:
+            self._capture_index = -1
+            self._key_hint.setText("按键校准已中断：页面切换。")
+            self._key_hint.setStyleSheet("color:#777;")
+
+        if self._vel_enabled or self._vel_timer.isActive() or self._vel_pressed:
+            self._disable_velocity_control(
+                send_stop=self._linked,
+                reason=f"键盘控制已暂停：{reason}",
+            )
+
+    def _send_velocity_query(self) -> None:
+        self._emit_velocity(AUTO_VEL_CMD_QUERY, 0.0, 0.0, 0.0, "已发送 FA：查询速度控制")
+
+    def _enable_velocity_control(self) -> None:
+        if not self._linked:
+            self.set_ack_state(self.STATE_FAIL, "串口未连接，不能启用键盘控制")
+            return
+        if not self._vel_confirm.isChecked():
+            QMessageBox.warning(self, "安全确认缺失", "启用键盘速度控制前必须勾选安全确认。")
+            self.set_ack_state(self.STATE_FAIL, "键盘控制已拦截：未勾选安全确认")
+            return
+        self._vel_enabled = True
+        self._vel_pressed.clear()
+        self._vel_last_sent = (0.0, 0.0, 0.0)
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._key_hint.setText("键盘控制已启用：按住方向键/A/D才发送速度，松开立即归零。")
+        self._key_hint.setStyleSheet("color:#2E7D32;font-weight:bold;")
+        self._update_velocity_view(0.0, 0.0, 0.0)
+
+    def _disable_velocity_control(self, *, send_stop: bool = True, reason: str = "键盘控制已关闭") -> None:
+        self._vel_enabled = False
+        self._vel_pressed.clear()
+        self._vel_timer.stop()
+        self._update_velocity_view(0.0, 0.0, 0.0)
+        self._key_hint.setText(reason)
+        self._key_hint.setStyleSheet("color:#777;")
+        if send_stop and self._linked:
+            self._emit_velocity(AUTO_VEL_CMD_STOP, 0.0, 0.0, 0.0, "已发送 FA：停止速度控制")
+
+    def _start_key_capture(self) -> None:
+        self._capture_steps = [
+            ("forward", "请按：向上箭头"),
+            ("back", "请按：向下箭头"),
+            ("left", "请按：向左箭头"),
+            ("right", "请按：向右箭头"),
+            ("yaw_left", "请按：A（左旋）"),
+            ("yaw_right", "请按：D（右旋）"),
+        ]
+        self._capture_index = 0
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._key_hint.setText(self._capture_steps[0][1])
+        self._key_hint.setStyleSheet("color:#B58900;font-weight:bold;")
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        key = int(event.key())
+        if event.isAutoRepeat():
+            event.accept()
+            return
+        if self._capture_index >= 0:
+            self._capture_key(key)
+            event.accept()
+            return
+        if not self._vel_enabled:
+            super().keyPressEvent(event)
+            return
+        if key in self._vel_key_map.values():
+            self._vel_pressed.add(key)
+            self._send_velocity_from_keys()
+            self._vel_timer.start()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event) -> None:  # noqa: N802
+        key = int(event.key())
+        if event.isAutoRepeat():
+            event.accept()
+            return
+        if key in self._vel_pressed:
+            self._vel_pressed.discard(key)
+            self._send_velocity_from_keys()
+            if not self._vel_pressed:
+                self._vel_timer.stop()
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
+
+    def _capture_key(self, key: int) -> None:
+        if self._capture_index < 0 or self._capture_index >= len(self._capture_steps):
+            return
+        action, _prompt = self._capture_steps[self._capture_index]
+        self._vel_key_map[action] = int(key)
+        self._capture_index += 1
+        if self._capture_index >= len(self._capture_steps):
+            self._capture_index = -1
+            self._key_hint.setText(
+                "按键校准完成：启用后按住映射键才输出速度，松开立即归零。"
+            )
+            self._key_hint.setStyleSheet("color:#2E7D32;font-weight:bold;")
+            self._save_velocity_keymap()
+            return
+        self._key_hint.setText(self._capture_steps[self._capture_index][1])
+
+    def _load_velocity_keymap(self) -> None:
+        try:
+            data = json.loads(_KEYMAP_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        for key in self._vel_key_map:
+            try:
+                value = int(data[key])
+            except Exception:
+                continue
+            if value > 0:
+                self._vel_key_map[key] = value
+
+    def _save_velocity_keymap(self) -> None:
+        try:
+            _KEYMAP_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _KEYMAP_FILE.write_text(
+                json.dumps(self._vel_key_map, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            self._key_hint.setText("按键已捕获，但保存失败；本次运行仍然生效。")
+            self._key_hint.setStyleSheet("color:#EF6C00;font-weight:bold;")
+
+    def _velocity_from_keys(self) -> tuple[float, float, float]:
+        vx_axis = 0
+        vy_axis = 0
+        yaw_axis = 0
+        if self._vel_key_map["forward"] in self._vel_pressed:
+            vx_axis += 1
+        if self._vel_key_map["back"] in self._vel_pressed:
+            vx_axis -= 1
+        if self._vel_key_map["left"] in self._vel_pressed:
+            vy_axis += 1
+        if self._vel_key_map["right"] in self._vel_pressed:
+            vy_axis -= 1
+        if self._vel_key_map["yaw_left"] in self._vel_pressed:
+            yaw_axis += 1
+        if self._vel_key_map["yaw_right"] in self._vel_pressed:
+            yaw_axis -= 1
+
+        linear = float(self._linear_speed.value())
+        if vx_axis != 0 and vy_axis != 0:
+            linear *= 0.7071
+        vx = float(vx_axis) * linear
+        vy = float(vy_axis) * linear
+        yaw = float(yaw_axis) * float(self._yaw_speed.value())
+        return vx, vy, yaw
+
+    def _send_velocity_from_keys(self) -> None:
+        if not self._vel_enabled:
+            return
+        vx, vy, yaw = self._velocity_from_keys()
+        self._update_velocity_view(vx, vy, yaw)
+        if vx != 0.0 or vy != 0.0 or yaw != 0.0:
+            self._cancel_route("巡航已取消：键盘速度控制接管")
+        if (vx, vy, yaw) == self._vel_last_sent and (vx, vy, yaw) == (0.0, 0.0, 0.0):
+            return
+        self._vel_last_sent = (vx, vy, yaw)
+        self._emit_velocity(AUTO_VEL_CMD_SET, vx, vy, yaw, "已发送 FA：键盘速度")
+
+    def _update_velocity_view(self, vx: float, vy: float, yaw: float) -> None:
+        linear = max(1.0, float(self._linear_speed.value()))
+        yaw_scale = max(1.0, float(self._yaw_speed.value()))
+        # GUI 视觉按机体系 FLU 显示：X+ 向前、Y+ 向机头左、yaw+ 左旋。
+        # 屏幕坐标 X+ 在右侧，所以水平和偏航指示需要取反；协议下发值不变。
+        self._stick.set_vector(-vy / linear, vx / linear)
+        self._yaw_indicator.set_yaw(-yaw / yaw_scale)
+        self._vel_values.setText(f"vx={vx:.1f} cm/s  vy={vy:.1f} cm/s  yaw={yaw:.1f} deg/s")
+
+    def _emit_velocity(self, cmd: int, vx: float, vy: float, yaw: float, status_text: str) -> int:
+        seq = self._vel_seq
+        params = {
+            "seq": seq,
+            "cmd": cmd,
+            "vx_cmps": float(vx),
+            "vy_cmps": float(vy),
+            "yaw_dps": float(yaw),
+            "flags": 0,
+            "_silent": cmd == AUTO_VEL_CMD_SET,
+        }
+        self._vel_seq = self._next_seq(self._vel_seq)
+        self.set_ack_state(self.STATE_WAITING, status_text)
+        self.command_send_requested.emit(CMD_AUTO_VELOCITY, params)
+        return seq
 
     @staticmethod
     def _next_seq(seq: int) -> int:

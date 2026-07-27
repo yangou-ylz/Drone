@@ -18,9 +18,11 @@ from ano_protocol import (
     AUTO_STATUS_FLAG_RC_HOLD_FRAME,
     AUTO_STATUS_FLAG_RC_LOCKOUT,
     AUTO_STATUS_FLAG_RC_NO_SIGNAL,
+    AUTO_VEL_CMD_SET,
     CMD_AUTO_STATUS,
     build_f7_auto_cmd,
     build_f9_move_cmd,
+    build_fa_velocity_cmd,
     build_frame,
     calc_checksum,
     hex_dump,
@@ -44,6 +46,12 @@ GOLDEN_F9_MOVE_X30 = (
     "AA FF F9 0F "
     "01 01 00 01 5A A5 1E 00 00 00 00 00 FF 00 00 "
     "D0 89"
+)
+
+GOLDEN_FA_VEL = (
+    "AA FF FA 0E "
+    "01 01 00 01 5A A5 0F 00 F1 FF 14 00 00 00 "
+    "C6 35"
 )
 
 
@@ -128,6 +136,23 @@ def test_f9_move_x30_golden() -> None:
     assert frame[-2:] == bytes([sc, ac])
 
 
+def test_fa_velocity_golden() -> None:
+    frame = build_fa_velocity_cmd(
+        ADDR_BROADCAST,
+        seq=1,
+        cmd=AUTO_VEL_CMD_SET,
+        safety_key=AUTO_SAFETY_KEY,
+        vx_cmps=15,
+        vy_cmps=-15,
+        yaw_dps=20,
+    )
+    assert len(frame) == 20
+    assert hex_dump(frame) == GOLDEN_FA_VEL
+    assert frame[:4] == bytes([0xAA, 0xFF, 0xFA, 0x0E])
+    sc, ac = calc_checksum(frame[:-2])
+    assert frame[-2:] == bytes([sc, ac])
+
+
 def test_f8_status_parse() -> None:
     data = struct.pack(
         "<BHHBBHHBBHhHHHH",
@@ -173,6 +198,7 @@ def main() -> int:
     test_f7_lock_rc_requires_safety_key()
     test_f7_takeoff_hold_golden()
     test_f9_move_x30_golden()
+    test_fa_velocity_golden()
     test_f8_status_parse()
     print("test_f7_f8_frame.py: OK")
     return 0

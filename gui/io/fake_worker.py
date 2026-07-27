@@ -52,11 +52,15 @@ from .protocol import (
     AUTO_MOVE_CMD_QUERY,
     AUTO_MOVE_CMD_START,
     AUTO_MOVE_CMD_STOP,
+    AUTO_VEL_CMD_QUERY,
+    AUTO_VEL_CMD_SET,
+    AUTO_VEL_CMD_STOP,
     AUTO_SAFETY_KEY,
     COLOR_GREEN,
     COLOR_RED,
     CMD_AUTO_MOVE,
     CMD_AUTO_STATUS,
+    CMD_AUTO_VELOCITY,
     Frame,
     FrameParser,
     build_frame,
@@ -185,6 +189,8 @@ class FakeWorker(QObject):
             self._echo_f7(fr.data)
         elif fr.cmd == CMD_AUTO_MOVE:
             self._echo_f9(fr.data)
+        elif fr.cmd == CMD_AUTO_VELOCITY:
+            self._echo_fa(fr.data)
         # 其它 CMD 静默丢弃（飞控也不会回执）
 
     def _echo_f1(self, data: bytes) -> None:
@@ -382,6 +388,49 @@ class FakeWorker(QObject):
         if cmd == AUTO_MOVE_CMD_START:
             status_flags |= 0x0020
         self._schedule_auto_status(seq, 0xF9, state, status_flags, error)
+
+    def _echo_fa(self, data: bytes) -> None:
+        """0xFA GUI键盘低速速度控制：离线验证回执和状态。"""
+        if len(data) != 14:
+            self._auto_err_cnt += 1
+            self._schedule_echo(COLOR_RED, "AUTO VEL_ERR seq=0 err=0001")
+            self._schedule_auto_status(0, 0xFA, 22, 0x00, 0x0001)
+            return
+        ver, seq, cmd, key, vx, vy, yaw, _flags = struct.unpack("<BHBHhhhH", data)
+        self._auto_rx_cnt += 1
+        error = 0
+        color = COLOR_GREEN
+        if ver != 1:
+            error = 0x0002
+            color = COLOR_RED
+            text = f"AUTO VEL_ERR seq={seq} err={error:04X}"
+            state = 22
+        elif cmd == AUTO_VEL_CMD_SET and key != AUTO_SAFETY_KEY:
+            error = 0x0003
+            color = COLOR_RED
+            text = f"AUTO VEL_ERR seq={seq} err={error:04X}"
+            state = 22
+        elif cmd == AUTO_VEL_CMD_SET:
+            text = f"AUTO VEL_SET seq={seq}"
+            state = 25
+        elif cmd == AUTO_VEL_CMD_STOP:
+            text = f"AUTO VEL_STOP seq={seq}"
+            state = 19
+        elif cmd == AUTO_VEL_CMD_QUERY:
+            text = f"AUTO VEL_QUERY seq={seq}"
+            state = 0
+        else:
+            error = 0x0006
+            color = COLOR_RED
+            text = f"AUTO VEL_BAD_CMD seq={seq} err={error:04X}"
+            state = 22
+        if error:
+            self._auto_err_cnt += 1
+        self._schedule_echo(color, text)
+        status_flags = 0x0001 | 0x0002 | 0x0004 | AUTO_FLAG_NO_XY_MOTION | 0x0040 | 0x0080 | 0x0100
+        if cmd == AUTO_VEL_CMD_SET and error == 0:
+            status_flags |= 0x0020
+        self._schedule_auto_status(seq, 0xFA, state, status_flags, error)
 
     def _schedule_echo(self, color: int, text: str) -> None:
         timer = QTimer(self)

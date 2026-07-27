@@ -33,6 +33,7 @@
 #define AUTO_ACTIVE_STATUS_GAP_TICKS 10u
 #define AUTO_F5_FRESH_MS 500u
 #define AUTO_F5_AGE_UNKNOWN 65535u
+#define AUTO_MANUAL_VEL_TIMEOUT_TICKS 15u
 
 #define AUTO_PLAN_NONE 0u
 #define AUTO_PLAN_MODE_ONLY 1u
@@ -65,7 +66,13 @@ static u8 s_rc_control_owner;
 static s32 s_takeoff_alt_ref_cm;
 static s32 s_takeoff_lift_max_cm;
 static u16 s_takeoff_confirm_tick;
+static u16 s_last_f7_seq;
 static u16 s_last_move_seq;
+static u16 s_last_vel_seq;
+static s16 s_manual_vx_cmps;
+static s16 s_manual_vy_cmps;
+static s16 s_manual_yaw_dps;
+static u16 s_manual_vel_timeout_tick;
 static u16 s_volt_low_tick;
 static u16 s_volt_critical_tick;
 static u8 s_volt_warn_sent;
@@ -202,6 +209,7 @@ static void clear_rt_output(void);
 static void mark_status_now(void);
 static void enter_state(u8 new_state, const char *name);
 static void enter_state_quiet(u8 new_state);
+static void manual_vel_stop_state(void);
 
 static u8 auto_owns_rc_control(void)
 {
@@ -221,6 +229,7 @@ static void acquire_auto_control(const char *reason)
 
 static void release_rc_control(const char *reason)
 {
+	manual_vel_stop_state();
 	UserTask_Pid3dStopFromGui();
 	s_rc_control_owner = AUTO_RC_OWNER_RC;
 	clear_rt_output();
@@ -231,6 +240,7 @@ static void release_rc_control(const char *reason)
 
 static void lock_rc_control(const char *reason)
 {
+	manual_vel_stop_state();
 	UserTask_Pid3dStopFromGui();
 	s_rc_control_owner = AUTO_RC_OWNER_AUTO;
 	clear_rt_output();
@@ -248,6 +258,27 @@ static void clear_rt_output(void)
 	rt_tar.st_data.vel_x = 0;
 	rt_tar.st_data.vel_y = 0;
 	rt_tar.st_data.vel_z = 0;
+}
+
+static void manual_vel_stop_state(void)
+{
+	s_manual_vx_cmps = 0;
+	s_manual_vy_cmps = 0;
+	s_manual_yaw_dps = 0;
+	s_manual_vel_timeout_tick = 0;
+}
+
+static s16 clamp_manual_s16(s16 v, s16 limit)
+{
+	if (v > limit)
+	{
+		return limit;
+	}
+	if (v < -limit)
+	{
+		return (s16)(-limit);
+	}
+	return v;
 }
 
 static void reset_takeoff_detect(void)
@@ -449,6 +480,7 @@ static void set_error(u16 err, u8 to_error_state)
 {
 	s_error = err;
 	s_err_cnt++;
+	manual_vel_stop_state();
 	UserTask_Pid3dStopFromGui();
 	clear_rt_output();
 	if (to_error_state != 0u)
@@ -465,6 +497,7 @@ static void abort_land_with_error(u16 err, const char *name)
 {
 	s_error = err;
 	s_err_cnt++;
+	manual_vel_stop_state();
 	UserTask_Pid3dStopFromGui();
 	clear_rt_output();
 	auto_log(UPLINK_LOG_ERR, name, s_last_cmd_seq, err);
@@ -718,11 +751,14 @@ void Auto_Mission_Init(void)
 	s_status_gap_tick = 0;
 	s_f5_age_ms = AUTO_F5_AGE_UNKNOWN;
 	s_last_f5_rx_cnt = 0;
+	s_last_f7_seq = 0;
 	s_last_move_seq = 0;
+	s_last_vel_seq = 0;
 	s_rx_f7_cnt = 0;
 	s_err_cnt = 0;
 	s_need_status_now = 1;
 	s_rc_control_owner = AUTO_RC_OWNER_AUTO;
+	manual_vel_stop_state();
 	reset_takeoff_detect();
 	clear_rt_output();
 }
@@ -753,13 +789,14 @@ void Auto_Mission_OnCommand(const _auto_mission_cmd_st *cmd)
 
 	if (cmd->cmd != AUTO_CMD_QUERY_STATUS &&
 		cmd->cmd != AUTO_CMD_EMERGENCY_LOCK &&
-		cmd->seq == s_last_cmd_seq)
+		cmd->seq == s_last_f7_seq)
 	{
 		set_error(AUTO_ERR_DUP_SEQ, 0);
 		auto_log(UPLINK_LOG_WARN, "DUP", cmd->seq, AUTO_ERR_DUP_SEQ);
 		return;
 	}
 
+	s_last_f7_seq = cmd->seq;
 	s_last_cmd_seq = cmd->seq;
 
 	if (require_key(cmd->cmd) != 0u && cmd->safety_key != AUTO_SAFETY_KEY)
@@ -1027,6 +1064,144 @@ void Auto_Mission_OnMoveCommand(const _auto_move_cmd_st *cmd)
 	s_error = AUTO_ERR_OK;
 	s_plan = AUTO_PLAN_NONE;
 	enter_state(AUTO_STATE_MOVE_RUN, (clamped != 0u) ? "MOVE_START_CLP" : "MOVE_START");
+}
+
+static u8 manual_vel_state_allows(void)
+{
+	if (auto_owns_rc_control() == 0u)
+	{
+		return 0u;
+	}
+	if (fc_sta.fc_mode_sta != 2u || fc_sta.unlock_sta == 0u)
+	{
+		return 0u;
+	}
+	if (s_state == AUTO_STATE_ABORT_LAND ||
+		s_state == AUTO_STATE_EMERGENCY_LOCK ||
+		s_state == AUTO_STATE_ERROR)
+	{
+		return 0u;
+	}
+	return 1u;
+}
+
+void Auto_Mission_OnVelocityCommand(const _auto_vel_cmd_st *cmd)
+{
+	s16 vx;
+	s16 vy;
+	s16 yaw;
+	u8 clamped;
+	u8 was_manual;
+
+	if (cmd == 0)
+	{
+		return;
+	}
+
+	s_last_cmd = AUTO_FA_CMD;
+
+	if (cmd->ver != AUTO_PROTOCOL_VER)
+	{
+		set_error(AUTO_ERR_BAD_VER, 0);
+		auto_log(UPLINK_LOG_ERR, "VEL_ERR", cmd->seq, AUTO_ERR_BAD_VER);
+		return;
+	}
+
+	if (cmd->cmd != AUTO_VEL_CMD_QUERY &&
+		cmd->cmd != AUTO_VEL_CMD_STOP &&
+		cmd->seq == s_last_vel_seq)
+	{
+		set_error(AUTO_ERR_DUP_SEQ, 0);
+		auto_log(UPLINK_LOG_WARN, "VEL_DUP", cmd->seq, AUTO_ERR_DUP_SEQ);
+		return;
+	}
+
+	s_last_vel_seq = cmd->seq;
+	s_last_cmd_seq = cmd->seq;
+
+	if (cmd->cmd == AUTO_VEL_CMD_QUERY)
+	{
+		auto_log(UPLINK_LOG_INFO, "VEL_QUERY", cmd->seq, AUTO_ERR_OK);
+		mark_status_now();
+		return;
+	}
+
+	if (cmd->cmd == AUTO_VEL_CMD_STOP)
+	{
+		manual_vel_stop_state();
+		clear_rt_output();
+		if (s_state == AUTO_STATE_MANUAL_VEL)
+		{
+			s_plan = AUTO_PLAN_NONE;
+			enter_state(AUTO_STATE_DONE, "VEL_STOP");
+		}
+		else
+		{
+			auto_log(UPLINK_LOG_INFO, "VEL_STOP", cmd->seq, AUTO_ERR_OK);
+		}
+		return;
+	}
+
+	if (cmd->cmd != AUTO_VEL_CMD_SET)
+	{
+		set_error(AUTO_ERR_BAD_CMD, 0);
+		auto_log(UPLINK_LOG_ERR, "VEL_BAD_CMD", cmd->seq, AUTO_ERR_BAD_CMD);
+		return;
+	}
+
+	if (cmd->safety_key != AUTO_SAFETY_KEY)
+	{
+		set_error(AUTO_ERR_BAD_KEY, 0);
+		auto_log(UPLINK_LOG_ERR, "VEL_ERR", cmd->seq, AUTO_ERR_BAD_KEY);
+		return;
+	}
+
+	if (auto_owns_rc_control() == 0u)
+	{
+		set_error(AUTO_ERR_VEL_DENY_RC, 0);
+		auto_log(UPLINK_LOG_ERR, "VEL_DENY_RC", cmd->seq, AUTO_ERR_VEL_DENY_RC);
+		return;
+	}
+
+	if (manual_vel_state_allows() == 0u)
+	{
+		set_error(AUTO_ERR_VEL_DENY_STATE, 0);
+		auto_log(UPLINK_LOG_ERR, "VEL_DENY", cmd->seq, AUTO_ERR_VEL_DENY_STATE);
+		return;
+	}
+
+	if (voltage_flight_ok() == 0u || ext_vel_ok() == 0u || ext_alt_ok() == 0u)
+	{
+		set_error(AUTO_ERR_PRECHECK_EXT_VEL, 0);
+		auto_log(UPLINK_LOG_ERR, "VEL_DENY", cmd->seq, s_error);
+		return;
+	}
+
+	UserTask_Pid3dStopFromGui();
+	s_plan = AUTO_PLAN_NONE;
+	manual_vel_stop_state();
+	was_manual = (s_state == AUTO_STATE_MANUAL_VEL) ? 1u : 0u;
+	vx = clamp_manual_s16(cmd->vx_cmps, AUTO_VEL_LIMIT_CMPS);
+	vy = clamp_manual_s16(cmd->vy_cmps, AUTO_VEL_LIMIT_CMPS);
+	yaw = clamp_manual_s16(cmd->yaw_dps, AUTO_YAW_LIMIT_DPS);
+	clamped = (vx != cmd->vx_cmps || vy != cmd->vy_cmps || yaw != cmd->yaw_dps) ? 1u : 0u;
+	s_manual_vx_cmps = vx;
+	s_manual_vy_cmps = vy;
+	s_manual_yaw_dps = yaw;
+	s_manual_vel_timeout_tick = AUTO_MANUAL_VEL_TIMEOUT_TICKS;
+	s_error = AUTO_ERR_OK;
+	if (was_manual == 0u)
+	{
+		enter_state(AUTO_STATE_MANUAL_VEL, (clamped != 0u) ? "VEL_SET_CLP" : "VEL_SET");
+	}
+	else
+	{
+		mark_status_now();
+	}
+	if (clamped != 0u)
+	{
+		auto_log(UPLINK_LOG_WARN, "VEL_CLP", cmd->seq, AUTO_ERR_BAD_PARAM);
+	}
 }
 
 static void tick_mode2_request(void)
@@ -1324,6 +1499,48 @@ static void tick_move_control(void)
 	}
 }
 
+static void tick_manual_velocity(void)
+{
+	if (s_state != AUTO_STATE_MANUAL_VEL)
+	{
+		return;
+	}
+	if (voltage_runtime_ok() == 0u)
+	{
+		move_runtime_fault(AUTO_ERR_RUNTIME_VOLT, "VEL_VOLT");
+		return;
+	}
+	if (auto_owns_rc_control() == 0u || fc_sta.fc_mode_sta != 2u || fc_sta.unlock_sta == 0u)
+	{
+		move_runtime_fault(AUTO_ERR_VEL_DENY_STATE, "VEL_DENY");
+		return;
+	}
+	if (ext_vel_ok() == 0u || ext_alt_ok() == 0u)
+	{
+		move_runtime_fault(AUTO_ERR_RUNTIME_EXT, "VEL_EXT");
+		return;
+	}
+
+	if (s_manual_vel_timeout_tick == 0u)
+	{
+		manual_vel_stop_state();
+		clear_rt_output();
+		s_plan = AUTO_PLAN_NONE;
+		enter_state(AUTO_STATE_DONE, "VEL_TIMEOUT");
+		auto_log(UPLINK_LOG_WARN, "VEL_TIMEOUT", s_last_cmd_seq, AUTO_ERR_VEL_TIMEOUT);
+		return;
+	}
+	s_manual_vel_timeout_tick--;
+	rt_tar.st_data.rol = 0;
+	rt_tar.st_data.pit = 0;
+	rt_tar.st_data.thr = 0;
+	rt_tar.st_data.yaw_dps = s_manual_yaw_dps;
+	rt_tar.st_data.vel_x = s_manual_vx_cmps;
+	rt_tar.st_data.vel_y = s_manual_vy_cmps;
+	rt_tar.st_data.vel_z = 0;
+	dt.fun[0x41].WTS = 1;
+}
+
 static u8 runtime_guard_state(void)
 {
 	switch (s_state)
@@ -1445,6 +1662,9 @@ void Auto_Mission_Tick_50Hz(void)
 	case AUTO_STATE_MOVE_RUN:
 	case AUTO_STATE_MOVE_HOLD:
 		tick_move_control();
+		break;
+	case AUTO_STATE_MANUAL_VEL:
+		tick_manual_velocity();
 		break;
 	default:
 		break;

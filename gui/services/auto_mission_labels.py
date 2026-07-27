@@ -35,6 +35,7 @@ STATE_LABELS = {
     22: "错误",
     23: "位移运行",
     24: "位移到位保持",
+    25: "键盘速度控制",
 }
 
 CMD_LABELS = {
@@ -51,6 +52,7 @@ CMD_LABELS = {
     0x0A: "一键起飞保持",
     0x0B: "一键降落",
     0xF9: "位移命令",
+    0xFA: "键盘速度",
 }
 
 ERROR_LABELS = {
@@ -83,6 +85,9 @@ ERROR_LABELS = {
     0x0083: "位移要求已解锁",
     0x0084: "位移传感器无效",
     0x0085: "位移任务超时",
+    0x0090: "遥控权已释放",
+    0x0091: "状态不允许速度控制",
+    0x0092: "速度控制超时",
 }
 
 FLAG_LABELS = (
@@ -178,6 +183,19 @@ AUTO_EVENT_LABELS = {
     "MOVE_LOCKED": "位移中已上锁",
     "MOVE_EXT": "位移中外部传感异常",
     "MOVE_TIMEOUT": "位移任务超时",
+    "VEL_QUERY": "查询速度控制",
+    "VEL_SET": "键盘速度控制",
+    "VEL_SET_CLP": "键盘速度控制:限幅",
+    "VEL_STOP": "停止速度控制",
+    "VEL_TIMEOUT": "速度控制超时停止",
+    "VEL_CLP": "速度命令限幅",
+    "VEL_DUP": "速度命令重复",
+    "VEL_ERR": "速度命令错误",
+    "VEL_BAD_CMD": "速度未知命令",
+    "VEL_DENY": "拒绝速度控制",
+    "VEL_DENY_RC": "拒绝速度控制:遥控权已释放",
+    "VEL_VOLT": "速度控制中低电",
+    "VEL_EXT": "速度控制中传感异常",
 }
 
 _AUTO_RE = re.compile(r"^AUTO\s+([A-Z0-9_]+)(.*)$", re.I)

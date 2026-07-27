@@ -27,6 +27,7 @@ INVALID_S32 = -2147483648
 CMD_AUTO_MISSION = 0xF7
 CMD_AUTO_STATUS = 0xF8
 CMD_AUTO_MOVE = 0xF9
+CMD_AUTO_VELOCITY = 0xFA
 AUTO_PROTOCOL_VER = 1
 AUTO_SAFETY_KEY = 0xA55A
 AUTO_FLAG_NO_XY_MOTION = 0x0008
@@ -62,6 +63,11 @@ AUTO_MOVE_AXIS_Z = 3
 AUTO_MOVE_AXIS_XY = 4
 AUTO_MOVE_AXIS_AUTO = 0xFF
 AUTO_MOVE_LIMIT_CM = 200
+AUTO_VEL_CMD_QUERY = 0x00
+AUTO_VEL_CMD_SET = 0x01
+AUTO_VEL_CMD_STOP = 0x02
+AUTO_VEL_LIMIT_CMPS = 30
+AUTO_YAW_LIMIT_DPS = 45
 
 FLAG_SLAM_VALID = 0x01
 FLAG_TARGET_VALID = 0x02
@@ -267,6 +273,53 @@ def build_f9_move_cmd(
     if len(data) != 0x0F:
         raise AssertionError(f"internal F9 length error: {len(data)}")
     return build_frame(dest, CMD_AUTO_MOVE, data)
+
+
+def build_fa_velocity_cmd(
+    dest: int,
+    seq: int,
+    cmd: int,
+    *,
+    safety_key: int = 0,
+    vx_cmps: int | float = 0,
+    vy_cmps: int | float = 0,
+    yaw_dps: int | float = 0,
+    flags: int = 0,
+    ver: int = AUTO_PROTOCOL_VER,
+) -> bytes:
+    """GUI → STM32 键盘低速速度命令帧 0xFA。
+
+    DATA = ver:u8, seq:u16, cmd:u8, safety_key:u16,
+    vx/vy/yaw:s16, flags:u16。只表达水平线速度和偏航角速度。
+    """
+    checks = {
+        "ver": (ver, 0, 0xFF),
+        "seq": (seq, 0, 0xFFFF),
+        "cmd": (cmd, 0, 0xFF),
+        "safety_key": (safety_key, 0, 0xFFFF),
+        "vx_cmps": (round(float(vx_cmps)), -32768, 32767),
+        "vy_cmps": (round(float(vy_cmps)), -32768, 32767),
+        "yaw_dps": (round(float(yaw_dps)), -32768, 32767),
+        "flags": (flags, 0, 0xFFFF),
+    }
+    for name, (value, lo, hi) in checks.items():
+        iv = int(value)
+        if not (lo <= iv <= hi):
+            raise ValueError(f"{name} out of range: {value}")
+    data = struct.pack(
+        "<BHBHhhhH",
+        int(ver) & 0xFF,
+        int(seq) & 0xFFFF,
+        int(cmd) & 0xFF,
+        int(safety_key) & 0xFFFF,
+        int(round(float(vx_cmps))),
+        int(round(float(vy_cmps))),
+        int(round(float(yaw_dps))),
+        int(flags) & 0xFFFF,
+    )
+    if len(data) != 0x0E:
+        raise AssertionError(f"internal FA length error: {len(data)}")
+    return build_frame(dest, CMD_AUTO_VELOCITY, data)
 
 
 

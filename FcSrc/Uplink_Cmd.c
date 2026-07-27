@@ -670,6 +670,29 @@ void Uplink_Cmd_Dispatch(u8 *data, u8 len)
         return;
     }
 
+    /* ---------- 阶段7b：0xFA GUI键盘低速速度命令 ---------- */
+    if (cmd == AUTO_FA_CMD)
+    {
+        _auto_vel_cmd_st vel_cmd;
+
+        if (data_len != AUTO_FA_DATA_LEN || len != AUTO_FA_TOTAL_LEN)
+        {
+            Auto_Mission_RecordProtocolError(AUTO_ERR_BAD_LEN, cmd);
+            return;
+        }
+
+        vel_cmd.ver = *(data + 4);
+        vel_cmd.seq = le_u16_read(data + 5);
+        vel_cmd.cmd = *(data + 7);
+        vel_cmd.safety_key = le_u16_read(data + 8);
+        vel_cmd.vx_cmps = le_s16_read(data + 10);
+        vel_cmd.vy_cmps = le_s16_read(data + 12);
+        vel_cmd.yaw_dps = le_s16_read(data + 14);
+        vel_cmd.flags = le_u16_read(data + 16);
+        Auto_Mission_OnVelocityCommand(&vel_cmd);
+        return;
+    }
+
     /* ---------- 阶段1：0xF1 灵活帧 ---------- */
     if (cmd == 0xF1)
     {
