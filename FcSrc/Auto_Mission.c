@@ -14,6 +14,9 @@
 #define AUTO_MODE2_TIMEOUT_TICKS 250u
 #define AUTO_UNLOCK_TIMEOUT_TICKS 150u
 #define AUTO_TAKEOFF_WAIT_TICKS 300u
+#define AUTO_TAKEOFF_NO_LIFT_TICKS 500u
+#define AUTO_TAKEOFF_MIN_LIFT_CM 15L
+#define AUTO_TAKEOFF_CONFIRM_TICKS 10u
 #define AUTO_LAND_WAIT_TICKS 400u
 #define AUTO_IDLE_STATUS_GAP_TICKS 25u
 #define AUTO_ACTIVE_STATUS_GAP_TICKS 5u
@@ -47,6 +50,9 @@ static u16 s_rx_f7_cnt;
 static u16 s_err_cnt;
 static u8 s_need_status_now;
 static u8 s_rc_control_owner;
+static s32 s_takeoff_alt_ref_cm;
+static s32 s_takeoff_lift_max_cm;
+static u16 s_takeoff_confirm_tick;
 
 static void app(char *buf, u8 *idx, const char *str)
 {
@@ -83,6 +89,25 @@ static void app_u16_dec(char *buf, u8 *idx, u16 v)
 	}
 }
 
+static void app_s32_dec(char *buf, u8 *idx, s32 v)
+{
+	u32 mag;
+	if (v < 0)
+	{
+		app_ch(buf, idx, '-');
+		mag = (u32)(-v);
+	}
+	else
+	{
+		mag = (u32)v;
+	}
+	if (mag > 65535u)
+	{
+		mag = 65535u;
+	}
+	app_u16_dec(buf, idx, (u16)mag);
+}
+
 static void app_u8_hex(char *buf, u8 *idx, u8 v)
 {
 	const char hex[] = "0123456789ABCDEF";
@@ -109,6 +134,22 @@ static void auto_log(u8 level, const char *head, u16 seq, u16 err)
 		app(msg, &idx, " err=");
 		app_u16_hex(msg, &idx, err);
 	}
+	msg[idx] = '\0';
+	Uplink_Log(level, msg);
+}
+
+static void auto_log_takeoff_alt(u8 level, const char *head, s32 ref_cm, s32 cur_cm, s32 delta_cm)
+{
+	char msg[STRING_INFO_MAX_LEN + 1];
+	u8 idx = 0;
+	app(msg, &idx, "AUTO ");
+	app(msg, &idx, head);
+	app(msg, &idx, " b=");
+	app_s32_dec(msg, &idx, ref_cm);
+	app(msg, &idx, " h=");
+	app_s32_dec(msg, &idx, cur_cm);
+	app(msg, &idx, " d=");
+	app_s32_dec(msg, &idx, delta_cm);
 	msg[idx] = '\0';
 	Uplink_Log(level, msg);
 }
@@ -188,6 +229,23 @@ static void clear_rt_output(void)
 	rt_tar.st_data.vel_x = 0;
 	rt_tar.st_data.vel_y = 0;
 	rt_tar.st_data.vel_z = 0;
+}
+
+static void reset_takeoff_detect(void)
+{
+	s_takeoff_alt_ref_cm = fc_alt.st_data.alt_fu_cm;
+	s_takeoff_lift_max_cm = 0;
+	s_takeoff_confirm_tick = 0;
+}
+
+static s32 takeoff_delta_cm(void)
+{
+	s32 delta = fc_alt.st_data.alt_fu_cm - s_takeoff_alt_ref_cm;
+	if (delta > s_takeoff_lift_max_cm)
+	{
+		s_takeoff_lift_max_cm = delta;
+	}
+	return delta;
 }
 
 static u8 voltage_ok(void)
@@ -283,6 +341,15 @@ static void set_error(u16 err, u8 to_error_state)
 		s_mode2_stable_tick = 0;
 	}
 	mark_status_now();
+}
+
+static void abort_land_with_error(u16 err, const char *name)
+{
+	s_error = err;
+	s_err_cnt++;
+	clear_rt_output();
+	auto_log(UPLINK_LOG_ERR, name, s_last_cmd_seq, err);
+	enter_state(AUTO_STATE_ABORT_LAND, name);
 }
 
 static void enter_state(u8 new_state, const char *name)
@@ -411,6 +478,7 @@ void Auto_Mission_Init(void)
 	s_err_cnt = 0;
 	s_need_status_now = 1;
 	s_rc_control_owner = AUTO_RC_OWNER_AUTO;
+	reset_takeoff_detect();
 	clear_rt_output();
 }
 
@@ -694,6 +762,11 @@ static void tick_real_mission(void)
 	case AUTO_STATE_GROUND_STABLE:
 		if (s_state_tick >= AUTO_GROUND_STABLE_TICKS)
 		{
+			reset_takeoff_detect();
+			auto_log_takeoff_alt(UPLINK_LOG_INFO, "TO_REF",
+								  s_takeoff_alt_ref_cm,
+								  fc_alt.st_data.alt_fu_cm,
+								  0);
 			enter_state(AUTO_STATE_TAKEOFF_REQUEST, "TAKEOFF_REQ");
 		}
 		break;
@@ -709,16 +782,46 @@ static void tick_real_mission(void)
 		}
 		break;
 	case AUTO_STATE_WAIT_TAKEOFF:
-		if (s_state_tick >= AUTO_TAKEOFF_WAIT_TICKS)
+	{
+		s32 delta_cm = takeoff_delta_cm();
+		if (delta_cm >= AUTO_TAKEOFF_MIN_LIFT_CM)
 		{
+			if (s_takeoff_confirm_tick < 0xFFFFu)
+			{
+				s_takeoff_confirm_tick++;
+			}
+		}
+		else
+		{
+			s_takeoff_confirm_tick = 0;
+		}
+
+		if (s_takeoff_confirm_tick >= AUTO_TAKEOFF_CONFIRM_TICKS)
+		{
+			auto_log_takeoff_alt(UPLINK_LOG_INFO, "LIFT_OK",
+								  s_takeoff_alt_ref_cm,
+								  fc_alt.st_data.alt_fu_cm,
+								  delta_cm);
 			enter_state(AUTO_STATE_HOLD, "HOLD");
 		}
 		else if (clamp_ms_from_ticks(s_state_tick) > s_timeout_ms)
 		{
-			set_error(AUTO_ERR_TAKEOFF_TIMEOUT, 1u);
-			auto_log(UPLINK_LOG_ERR, "TAKEOFF_TIMEOUT", s_last_cmd_seq, AUTO_ERR_TAKEOFF_TIMEOUT);
+			abort_land_with_error(AUTO_ERR_TAKEOFF_TIMEOUT, "TAKEOFF_TIMEOUT");
+		}
+		else if (s_state_tick >= AUTO_TAKEOFF_NO_LIFT_TICKS)
+		{
+			auto_log_takeoff_alt(UPLINK_LOG_ERR, "NO_LIFT",
+								  s_takeoff_alt_ref_cm,
+								  fc_alt.st_data.alt_fu_cm,
+								  s_takeoff_lift_max_cm);
+			abort_land_with_error(AUTO_ERR_TAKEOFF_NO_LIFT, "TAKEOFF_NO_LIFT");
+		}
+		else if (s_state_tick >= AUTO_TAKEOFF_WAIT_TICKS)
+		{
+			mark_status_now();
 		}
 		break;
+	}
 	case AUTO_STATE_HOLD:
 		if (clamp_ms_from_ticks(s_state_tick) >= s_hold_ms)
 		{

@@ -65,6 +65,7 @@ ERROR_LABELS = {
     0x0020: "切定点超时",
     0x0030: "解锁超时",
     0x0040: "起飞等待超时",
+    0x0041: "起飞未离地",
     0x0050: "降落等待超时",
     0x0060: "用户中止",
     0x0061: "急停上锁",
@@ -108,8 +109,12 @@ AUTO_EVENT_LABELS = {
     "UNLOCK_REQ": "请求解锁",
     "WAIT_UNLOCK": "等待解锁确认",
     "GROUND_STABLE": "地面稳定等待",
+    "TO_REF": "记录起飞高度基准",
     "TAKEOFF_REQ": "发送起飞命令",
     "WAIT_TAKEOFF": "等待起飞窗口",
+    "LIFT_OK": "确认离地",
+    "NO_LIFT": "起飞未离地",
+    "TAKEOFF_NO_LIFT": "起飞未离地:转降落",
     "HOLD": "悬停计时",
     "LAND_REQ": "发送降落命令",
     "WAIT_LAND": "等待降落/落地",
@@ -142,6 +147,7 @@ AUTO_EVENT_LABELS = {
 _AUTO_RE = re.compile(r"^AUTO\s+([A-Z0-9_]+)(.*)$", re.I)
 _SEQ_RE = re.compile(r"\bseq=(\d+)\b", re.I)
 _ERR_RE = re.compile(r"\berr=([0-9A-Fa-f]{4})\b", re.I)
+_ALT_FIELD_RE = re.compile(r"\b([bhd])=(-?\d+)\b", re.I)
 
 
 def state_label(state: int) -> str:
@@ -215,6 +221,14 @@ def format_auto_a0_text(text: str) -> str:
             parts.append(f"错误={error_label(err_int)}")
         except ValueError:
             parts.append(f"错误=0x{err.group(1).upper()}")
+    alt_fields = {m.group(1).lower(): m.group(2) for m in _ALT_FIELD_RE.finditer(rest)}
+    if alt_fields:
+        if "b" in alt_fields:
+            parts.append(f"基准={alt_fields['b']}cm")
+        if "h" in alt_fields:
+            parts.append(f"当前={alt_fields['h']}cm")
+        if "d" in alt_fields:
+            parts.append(f"增量={alt_fields['d']}cm")
     return " ".join(parts)
 
 

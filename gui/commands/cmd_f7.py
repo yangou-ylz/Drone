@@ -13,6 +13,7 @@ import re
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDoubleSpinBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -59,6 +60,14 @@ from ..services.log_service import LogLevel
 
 
 _AUTO_ACK = re.compile(r"^AUTO\s+(.+)$", re.I)
+
+
+def _ms_to_s_text(ms: object) -> str:
+    try:
+        sec = int(ms) / 1000.0
+    except (TypeError, ValueError):
+        return "--"
+    return f"{sec:.1f}s"
 
 _CMD_LABELS = {
     AUTO_CMD_QUERY_STATUS: "查询状态",
@@ -128,7 +137,8 @@ class CmdF7(Command):
         return (
             f"{_CMD_LABELS.get(cmd, f'cmd=0x{cmd:02X}')}, "
             f"seq={params.get('seq')}, h={params.get('height_cm')}cm, "
-            f"hold={params.get('hold_ms')}ms, timeout={params.get('timeout_ms')}ms"
+            f"hold={_ms_to_s_text(params.get('hold_ms'))}, "
+            f"timeout={_ms_to_s_text(params.get('timeout_ms'))}"
         )
 
 
@@ -175,19 +185,23 @@ class F7Panel(CommandPanelBase):
         grid.addWidget(self._height, 0, 1)
 
         grid.addWidget(QLabel("悬停时间"), 0, 2)
-        self._hold = QSpinBox()
-        self._hold.setRange(1000, 5000)
-        self._hold.setSingleStep(500)
-        self._hold.setValue(3000)
-        self._hold.setSuffix(" ms")
+        self._hold = QDoubleSpinBox()
+        self._hold.setRange(1.0, 5.0)
+        self._hold.setDecimals(1)
+        self._hold.setSingleStep(0.5)
+        self._hold.setValue(3.0)
+        self._hold.setSuffix(" s")
+        self._hold.setToolTip("协议内部仍按毫秒发送；GUI 这里用秒显示，允许 1.0~5.0s。")
         grid.addWidget(self._hold, 0, 3)
 
         grid.addWidget(QLabel("总超时"), 1, 0)
-        self._timeout = QSpinBox()
-        self._timeout.setRange(5000, 60000)
-        self._timeout.setSingleStep(1000)
-        self._timeout.setValue(30000)
-        self._timeout.setSuffix(" ms")
+        self._timeout = QDoubleSpinBox()
+        self._timeout.setRange(5.0, 60.0)
+        self._timeout.setDecimals(1)
+        self._timeout.setSingleStep(1.0)
+        self._timeout.setValue(30.0)
+        self._timeout.setSuffix(" s")
+        self._timeout.setToolTip("协议内部仍按毫秒发送；GUI 这里用秒显示，允许 5.0~60.0s。")
         grid.addWidget(self._timeout, 1, 1)
 
         self._no_xy = QCheckBox("强制 no_xy_motion")
@@ -356,9 +370,9 @@ class F7Panel(CommandPanelBase):
             "seq": self._seq,
             "cmd": cmd,
             "height_cm": int(self._height.value()),
-            "hold_ms": int(self._hold.value()),
+            "hold_ms": int(round(float(self._hold.value()) * 1000.0)),
             "flags": AUTO_FLAG_NO_XY_MOTION,
-            "timeout_ms": int(self._timeout.value()),
+            "timeout_ms": int(round(float(self._timeout.value()) * 1000.0)),
         }
         self._seq = (self._seq + 1) & 0xFFFF
         if self._seq == 0:

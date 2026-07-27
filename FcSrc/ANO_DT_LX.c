@@ -487,9 +487,28 @@ static void Add_Send_Data(u8 frame_num, u8 *_cnt, u8 send_buffer[])
 	break;
 	case 0x40: // 遥控数据帧
 	{
-		for (u8 i = 0; i < 20; i++)
+		if (Auto_Mission_RcControlAllowed() == 0u)
 		{
-			send_buffer[(*_cnt)++] = rc_in.rc_ch.byte_data[i];
+			/*
+			 * AUTO锁定时不能把真实遥控摇杆继续透传给IMU。
+			 * 否则遥控器开着且油门在低位时，Mode2会把前4通道视为非中位，
+			 * 优先响应遥控输入，导致一键起飞命令被接受但实际无法离地。
+			 */
+			const s16 auto_rc_ch[10] = {
+				1500, 1500, 1500, 1500, 1500,
+				1250, 1500, 1500, 1500, 1500};
+			for (u8 i = 0; i < 10; i++)
+			{
+				send_buffer[(*_cnt)++] = BYTE0(auto_rc_ch[i]);
+				send_buffer[(*_cnt)++] = BYTE1(auto_rc_ch[i]);
+			}
+		}
+		else
+		{
+			for (u8 i = 0; i < 20; i++)
+			{
+				send_buffer[(*_cnt)++] = rc_in.rc_ch.byte_data[i];
+			}
 		}
 	}
 	break;
