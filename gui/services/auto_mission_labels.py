@@ -33,6 +33,8 @@ STATE_LABELS = {
     20: "中止降落",
     21: "急停上锁",
     22: "错误",
+    23: "位移运行",
+    24: "位移到位保持",
 }
 
 CMD_LABELS = {
@@ -46,6 +48,9 @@ CMD_LABELS = {
     0x07: "清错误",
     0x08: "释放遥控权",
     0x09: "锁定遥控权",
+    0x0A: "一键起飞保持",
+    0x0B: "一键降落",
+    0xF9: "位移命令",
 }
 
 ERROR_LABELS = {
@@ -72,6 +77,12 @@ ERROR_LABELS = {
     0x0070: "运行中电压异常",
     0x0071: "运行中模式丢失",
     0x0072: "运行中外部传感异常",
+    0x0080: "位移任务忙",
+    0x0081: "状态不允许位移",
+    0x0082: "位移要求定点模式",
+    0x0083: "位移要求已解锁",
+    0x0084: "位移传感器无效",
+    0x0085: "位移任务超时",
 }
 
 FLAG_LABELS = (
@@ -87,6 +98,9 @@ FLAG_LABELS = (
     (0x0200, "RC失控"),
     (0x0400, "RC无帧"),
     (0x0800, "RC保持帧"),
+    (0x1000, "起飞电压OK"),
+    (0x2000, "电压警告"),
+    (0x4000, "低电降落"),
 )
 
 AUTO_EVENT_LABELS = {
@@ -111,12 +125,16 @@ AUTO_EVENT_LABELS = {
     "GROUND_STABLE": "地面稳定等待",
     "TO_REF": "记录起飞高度基准",
     "TAKEOFF_REQ": "发送起飞命令",
+    "TAKEOFF_HOLD": "一键起飞保持",
+    "TAKEOFF_HOLD_DENY": "拒绝起飞保持",
     "WAIT_TAKEOFF": "等待起飞窗口",
     "LIFT_OK": "确认离地",
     "NO_LIFT": "起飞未离地",
     "TAKEOFF_NO_LIFT": "起飞未离地:转降落",
     "HOLD": "悬停计时",
     "LAND_REQ": "发送降落命令",
+    "LAND_ONLY": "一键降落",
+    "LAND_DONE": "已在上锁/降落完成",
     "WAIT_LAND": "等待降落/落地",
     "LOCK_REQ": "请求上锁",
     "DONE": "完成",
@@ -139,9 +157,27 @@ AUTO_EVENT_LABELS = {
     "UNLOCK_TIMEOUT": "解锁超时",
     "TAKEOFF_TIMEOUT": "起飞等待超时",
     "LAND_TIMEOUT": "降落等待超时",
-    "RUNTIME_VOLT": "运行中电压异常",
+    "RUNTIME_VOLT": "持续低电降落",
+    "VOLT_WARN": "飞行电压警告",
     "RUNTIME_MODE": "运行中模式丢失",
     "RUNTIME_EXT": "运行中外部传感异常",
+    "MOVE_QUERY": "查询位移状态",
+    "MOVE_START": "开始位移",
+    "MOVE_START_CLP": "开始位移:目标限幅",
+    "MOVE_STOP": "停止位移",
+    "MOVE_HOLD": "位移到位保持",
+    "MOVE_ERR": "位移错误",
+    "MOVE_DUP": "位移重复命令",
+    "MOVE_BAD_CMD": "位移未知命令",
+    "MOVE_BAD_PARAM": "位移参数错误",
+    "MOVE_DENY": "拒绝位移",
+    "MOVE_DENY_STATE": "状态不允许位移",
+    "MOVE_BUSY": "位移任务忙",
+    "MOVE_VOLT": "位移中持续低电",
+    "MOVE_MODE": "位移中模式丢失",
+    "MOVE_LOCKED": "位移中已上锁",
+    "MOVE_EXT": "位移中外部传感异常",
+    "MOVE_TIMEOUT": "位移任务超时",
 }
 
 _AUTO_RE = re.compile(r"^AUTO\s+([A-Z0-9_]+)(.*)$", re.I)

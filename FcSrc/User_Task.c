@@ -350,6 +350,9 @@ static u16 s_3d_tick;          // RUNNING阶段tick计数（超时检测）
 static u16 s_3d_arrive_cnt;    // 到位持续tick计数（到位确认）
 static u8 s_3d_log_cnt;        // LOG间隔计数器
 static u8 s_3d_log_toggle;     // LOG交替标志（0=打obs，1=打vel）
+static u8 s_3d_gui_active;     // GUI自主位移任务是否正在复用PID3D
+static u8 s_3d_gui_step;       // GUI自主位移任务step，传给pid_3d_task
+static u8 s_3d_gui_axis_mode;  // GUI自主位移轴模式：0=XYZ,1=X,2=Y,3=Z,4=XY
 static s32 s_3d_alt_ref_cm;    // 初始高度参考值（cm）
 static u16 s_3d_alt_hold_cnt;  // 定高稳定连续tick数
 static u16 s_3d_alt_wait_tick; // 定高等待总tick数
@@ -379,6 +382,9 @@ static void pid_stop_output_now(void)
     s_3d_obs_x = 0.0f;
     s_3d_obs_y = 0.0f;
     s_3d_obs_z = 0.0f;
+    s_3d_gui_active = 0;
+    s_3d_gui_step = 0;
+    s_3d_gui_axis_mode = 0;
 #endif
     rt_tar.st_data.vel_x = 0;
     rt_tar.st_data.vel_y = 0;
@@ -1155,8 +1161,13 @@ static void pid_3d_task(u8 *step, u8 axis_mode)
             }
         }
 
-        // LOG：每5tick打印一次（100ms），交替输出观测位置和速度指令
-        if (++s_3d_log_cnt >= 5u)
+        // LOG：遥控/PID自测保持原100ms节奏；GUI自主位移只保留低频摘要。
+        // F9飞行时主要依赖0xF8状态帧，避免A0字符串日志占用数传带宽。
+        if (s_3d_gui_active != 0u && *step == 4u)
+        {
+            return;
+        }
+        if (++s_3d_log_cnt >= ((s_3d_gui_active != 0u) ? 50u : 5u))
         {
             s_3d_log_cnt = 0;
             if (s_3d_log_toggle == 0u)
@@ -1204,6 +1215,68 @@ static void pid_3d_task(u8 *step, u8 axis_mode)
 
 #endif // PID_TEST_EN
 
+#if (PID_TEST_EN && PID3D_EN)
+u8 UserTask_Pid3dStartFromGui(u8 axis_mode)
+{
+    if (axis_mode > 4u)
+    {
+        return 0;
+    }
+    if (s_3d_gui_active != 0u && s_3d_gui_step == 3u)
+    {
+        return 0;
+    }
+
+    pid_stop_output_now();
+    s_3d_gui_axis_mode = axis_mode;
+    s_3d_gui_step = 1u;
+    s_3d_gui_active = 1u;
+    return 1;
+}
+
+void UserTask_Pid3dTickFromGui(void)
+{
+    if (s_3d_gui_active == 0u)
+    {
+        return;
+    }
+    pid_3d_task(&s_3d_gui_step, s_3d_gui_axis_mode);
+    if (s_3d_gui_step == 5u)
+    {
+        s_3d_gui_active = 0u;
+    }
+}
+
+void UserTask_Pid3dStopFromGui(void)
+{
+    s_3d_gui_active = 0u;
+    s_3d_gui_step = 0u;
+    s_3d_gui_axis_mode = 0u;
+    pid_stop_output_now();
+}
+
+u8 UserTask_Pid3dGuiActive(void)
+{
+    return s_3d_gui_active;
+}
+
+u8 UserTask_Pid3dGuiStep(void)
+{
+    return s_3d_gui_step;
+}
+#else
+u8 UserTask_Pid3dStartFromGui(u8 axis_mode)
+{
+    (void)axis_mode;
+    return 0;
+}
+
+void UserTask_Pid3dTickFromGui(void) {}
+void UserTask_Pid3dStopFromGui(void) {}
+u8 UserTask_Pid3dGuiActive(void) { return 0; }
+u8 UserTask_Pid3dGuiStep(void) { return 0; }
+#endif
+
 #if PID_TEST_EN
 /* 前向声明：ARMCC V5(C90模式)在函数外调用时需要可见的static原型，否则生成extern引用导致链接失败 */
 static void pid_stop_output_now(void);
@@ -1225,7 +1298,10 @@ void UserTask_OneKeyCmd(void)
 #if RC_IDENTIFY_SAFE_MODE
     // 地面识别模式：只做通道识别日志，屏蔽一键起飞/任务动作。
 #if PID_TEST_EN
-    pid_stop_output_now();
+    if (UserTask_Pid3dGuiActive() == 0u)
+    {
+        pid_stop_output_now();
+    }
 #endif
     return;
 #endif
@@ -1251,7 +1327,10 @@ void UserTask_OneKeyCmd(void)
         mission_step_z = 0;
         pid_active_axis = 0;
 #if PID_TEST_EN
-        pid_stop_output_now();
+        if (UserTask_Pid3dGuiActive() == 0u)
+        {
+            pid_stop_output_now();
+        }
 #endif
         return;
     }

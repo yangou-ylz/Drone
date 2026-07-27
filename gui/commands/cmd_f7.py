@@ -31,12 +31,14 @@ from ..io.protocol import (
     AUTO_CMD_CLEAR_ERROR,
     AUTO_CMD_DRYRUN_TAKEOFF_LAND,
     AUTO_CMD_EMERGENCY_LOCK,
+    AUTO_CMD_LAND_ONLY,
     AUTO_CMD_PRECHECK,
     AUTO_CMD_QUERY_STATUS,
     AUTO_CMD_LOCK_RC,
     AUTO_CMD_RELEASE_RC,
     AUTO_CMD_REQUEST_MODE2,
     AUTO_CMD_START_LOW_TAKEOFF_LAND,
+    AUTO_CMD_TAKEOFF_HOLD,
     AUTO_FLAG_NO_XY_MOTION,
     AUTO_SAFETY_KEY,
     build_f7_auto_cmd,
@@ -80,12 +82,15 @@ _CMD_LABELS = {
     AUTO_CMD_CLEAR_ERROR: "清错误",
     AUTO_CMD_LOCK_RC: "锁定遥控权",
     AUTO_CMD_RELEASE_RC: "释放遥控权",
+    AUTO_CMD_TAKEOFF_HOLD: "一键起飞保持",
+    AUTO_CMD_LAND_ONLY: "一键降落",
 }
 
 _KEY_CMDS = {
     AUTO_CMD_REQUEST_MODE2,
     AUTO_CMD_DRYRUN_TAKEOFF_LAND,
     AUTO_CMD_START_LOW_TAKEOFF_LAND,
+    AUTO_CMD_TAKEOFF_HOLD,
     AUTO_CMD_LOCK_RC,
     AUTO_CMD_RELEASE_RC,
 }
@@ -191,7 +196,7 @@ class F7Panel(CommandPanelBase):
         self._hold.setSingleStep(0.5)
         self._hold.setValue(3.0)
         self._hold.setSuffix(" s")
-        self._hold.setToolTip("协议内部仍按毫秒发送；GUI 这里用秒显示，允许 1.0~5.0s。")
+        self._hold.setToolTip("只用于“正式低高度起降”的自动降落计时；一键起飞保持会忽略此项。")
         grid.addWidget(self._hold, 0, 3)
 
         grid.addWidget(QLabel("总超时"), 1, 0)
@@ -222,18 +227,24 @@ class F7Panel(CommandPanelBase):
         )
         self._btn_start.setStyleSheet("font-weight:bold;color:#C62828;")
         self._add_button(cmd_grid, "中止并降落", AUTO_CMD_ABORT_LAND, 1, 2)
+        self._btn_takeoff_hold = self._add_button(
+            cmd_grid, "一键起飞保持", AUTO_CMD_TAKEOFF_HOLD, 2, 0
+        )
+        self._btn_takeoff_hold.setStyleSheet("font-weight:bold;color:#C62828;")
+        self._btn_land_only = self._add_button(cmd_grid, "一键降落", AUTO_CMD_LAND_ONLY, 2, 1)
+        self._btn_land_only.setStyleSheet("font-weight:bold;color:#EF6C00;")
         self._btn_emergency = self._add_button(
-            cmd_grid, "强制上锁", AUTO_CMD_EMERGENCY_LOCK, 2, 0
+            cmd_grid, "强制上锁", AUTO_CMD_EMERGENCY_LOCK, 2, 2
         )
         self._btn_emergency.setStyleSheet("font-weight:bold;background:#C62828;color:white;")
-        self._btn_lock_rc = self._add_button(cmd_grid, "锁定遥控权", AUTO_CMD_LOCK_RC, 2, 1)
+        self._btn_lock_rc = self._add_button(cmd_grid, "锁定遥控权", AUTO_CMD_LOCK_RC, 3, 0)
         self._btn_lock_rc.setStyleSheet("font-weight:bold;color:#2E7D32;")
-        self._btn_release_rc = self._add_button(cmd_grid, "释放遥控权", AUTO_CMD_RELEASE_RC, 2, 2)
+        self._btn_release_rc = self._add_button(cmd_grid, "释放遥控权", AUTO_CMD_RELEASE_RC, 3, 1)
         self._btn_release_rc.setStyleSheet("font-weight:bold;color:#EF6C00;")
         self._add_button(cmd_grid, "清错误回空闲", AUTO_CMD_CLEAR_ERROR, 3, 2)
         root.addWidget(cmd_box)
 
-        self._confirm = QCheckBox("我已确认：桨叶/场地/人员安全，允许正式低高度起降")
+        self._confirm = QCheckBox("我已确认：桨叶/场地/人员安全，允许自动起飞")
         self._confirm.setStyleSheet("color:#C62828;font-weight:bold;")
         root.addWidget(self._confirm)
 
@@ -362,9 +373,9 @@ class F7Panel(CommandPanelBase):
         self._set_live("flags", flags, "#2E7D32" if error_ok else "#C62828", tooltip=flags)
 
     def _send_cmd(self, cmd: int) -> None:
-        if cmd == AUTO_CMD_START_LOW_TAKEOFF_LAND and not self._confirm.isChecked():
-            QMessageBox.warning(self, "安全确认缺失", "正式低高度起降前必须勾选安全确认。")
-            self.set_ack_state(self.STATE_FAIL, "正式起降已拦截：未勾选安全确认")
+        if cmd in (AUTO_CMD_START_LOW_TAKEOFF_LAND, AUTO_CMD_TAKEOFF_HOLD) and not self._confirm.isChecked():
+            QMessageBox.warning(self, "安全确认缺失", "自动起飞前必须勾选安全确认。")
+            self.set_ack_state(self.STATE_FAIL, "自动起飞已拦截：未勾选安全确认")
             return
         params = {
             "seq": self._seq,

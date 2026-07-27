@@ -61,12 +61,18 @@ class CommandPanel(QWidget):
     def set_ack_state(self, cmd_id: int, state: str, message: str = "") -> None:
         """按 cmd_id 路由三态反馈到对应面板（面板未构造则忽略）。"""
         panel = self._panels.get(cmd_id)
-        if panel is None:
-            return
-        try:
-            panel.set_ack_state(state, message)
-        except Exception:
-            pass
+        if panel is not None:
+            try:
+                panel.set_ack_state(state, message)
+            except Exception:
+                pass
+        for proxy_cid, proxy in self._panels.items():
+            if proxy_cid == cmd_id or not hasattr(proxy, "on_child_ack_state"):
+                continue
+            try:
+                proxy.on_child_ack_state(cmd_id, state, message)
+            except Exception:
+                pass
 
     def current_command(self) -> Command | None:
         cid = self._cmd_combo.currentData()
@@ -131,12 +137,16 @@ class CommandPanel(QWidget):
         # 懒构造面板并加入栈
         if cmd.cmd_id not in self._panels:
             panel = cmd.create_panel(self)
-            # 桥接面板的 send_requested → 本控件 command_send_requested
-            try:
-                panel.send_requested.connect(lambda p, cid=cmd.cmd_id: self.command_send_requested.emit(cid, dict(p)))
-            except AttributeError:
-                # 面板未定义 send_requested 信号，给出友好错误
-                print(f"[CommandPanel] 命令 0x{cmd.cmd_id:02X} 的面板缺少 send_requested 信号")
+            # 普通面板发送自身cmd_id；组合面板可直接指定真实cmd_id（例如同页发F7/F9）。
+            if hasattr(panel, "command_send_requested"):
+                panel.command_send_requested.connect(
+                    lambda cid, p: self.command_send_requested.emit(int(cid), dict(p))
+                )
+            else:
+                try:
+                    panel.send_requested.connect(lambda p, cid=cmd.cmd_id: self.command_send_requested.emit(cid, dict(p)))
+                except AttributeError:
+                    print(f"[CommandPanel] 命令 0x{cmd.cmd_id:02X} 的面板缺少 send_requested 信号")
             self._panels[cmd.cmd_id] = panel
             self._panel_index[cmd.cmd_id] = self._stack.addWidget(panel)
             panel.set_enabled_for_link(self._linked)

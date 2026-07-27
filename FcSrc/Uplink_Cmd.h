@@ -34,6 +34,11 @@
  *   - 当前阶段只保存最近一帧、统计计数、通过 0xA0 输出 ACK/日志；
  *     不写 PID、不改 rt_tar、不触发 0x41，避免联调期误控飞。
  *
+ * 阶段7a：0xF9 GUI相对位移命令
+ *   - 帧格式：AA FF F9 0F | ver seq cmd key x/y/z(s16 cm) axis flags | SC AC
+ *   - STM32 只在已解锁、Mode2、外部速度/测高正常时启动现有 PID3D；
+ *     不改树莓派0xF5，不重写位置环。
+ *
  * 触发条件：
  *   - Uplink_Cmd_Init 在 All_Init 末尾调用一次；
  *   - Uplink_Cmd_Tick 在 50Hz 调度器内调用；
@@ -121,6 +126,7 @@ void Uplink_Cmd_Record_F5_Checksum_Error(void);
 float Uplink_GetGoalX_Cm(void);
 float Uplink_GetGoalY_Cm(void);
 float Uplink_GetGoalZ_Cm(void);
+u8 Uplink_SetGoalXYZ_Cm(float x_cm, float y_cm, float z_cm);
 
 /* 读取最近一帧树莓派位置快照。返回 1=已有至少一帧合法 0xF5，0=尚未收到。 */
 u8 Uplink_F5_GetSnapshot(_uplink_f5_snapshot_st *out);

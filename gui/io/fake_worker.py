@@ -40,16 +40,22 @@ from .protocol import (
     AUTO_CMD_CLEAR_ERROR,
     AUTO_CMD_DRYRUN_TAKEOFF_LAND,
     AUTO_CMD_EMERGENCY_LOCK,
+    AUTO_CMD_LAND_ONLY,
     AUTO_CMD_PRECHECK,
     AUTO_CMD_QUERY_STATUS,
     AUTO_CMD_LOCK_RC,
     AUTO_CMD_RELEASE_RC,
     AUTO_CMD_REQUEST_MODE2,
     AUTO_CMD_START_LOW_TAKEOFF_LAND,
+    AUTO_CMD_TAKEOFF_HOLD,
     AUTO_FLAG_NO_XY_MOTION,
+    AUTO_MOVE_CMD_QUERY,
+    AUTO_MOVE_CMD_START,
+    AUTO_MOVE_CMD_STOP,
     AUTO_SAFETY_KEY,
     COLOR_GREEN,
     COLOR_RED,
+    CMD_AUTO_MOVE,
     CMD_AUTO_STATUS,
     Frame,
     FrameParser,
@@ -177,6 +183,8 @@ class FakeWorker(QObject):
             self._echo_f3(fr.data)
         elif fr.cmd == 0xF7:
             self._echo_f7(fr.data)
+        elif fr.cmd == CMD_AUTO_MOVE:
+            self._echo_f9(fr.data)
         # 其它 CMD 静默丢弃（飞控也不会回执）
 
     def _echo_f1(self, data: bytes) -> None:
@@ -221,6 +229,7 @@ class FakeWorker(QObject):
             AUTO_CMD_REQUEST_MODE2,
             AUTO_CMD_DRYRUN_TAKEOFF_LAND,
             AUTO_CMD_START_LOW_TAKEOFF_LAND,
+            AUTO_CMD_TAKEOFF_HOLD,
             AUTO_CMD_RELEASE_RC,
             AUTO_CMD_LOCK_RC,
         )
@@ -243,6 +252,8 @@ class FakeWorker(QObject):
                 AUTO_CMD_REQUEST_MODE2: 3,
                 AUTO_CMD_DRYRUN_TAKEOFF_LAND: 4,
                 AUTO_CMD_START_LOW_TAKEOFF_LAND: 10,
+                AUTO_CMD_TAKEOFF_HOLD: 10,
+                AUTO_CMD_LAND_ONLY: 16,
                 AUTO_CMD_ABORT_LAND: 20,
                 AUTO_CMD_EMERGENCY_LOCK: 21,
                 AUTO_CMD_CLEAR_ERROR: 0,
@@ -255,6 +266,8 @@ class FakeWorker(QObject):
                 AUTO_CMD_REQUEST_MODE2: "MODE2_WAIT",
                 AUTO_CMD_DRYRUN_TAKEOFF_LAND: "DRY_UNLOCK",
                 AUTO_CMD_START_LOW_TAKEOFF_LAND: "UNLOCK_REQ",
+                AUTO_CMD_TAKEOFF_HOLD: "TAKEOFF_HOLD",
+                AUTO_CMD_LAND_ONLY: "LAND_ONLY",
                 AUTO_CMD_ABORT_LAND: "ABORT_LAND",
                 AUTO_CMD_EMERGENCY_LOCK: "EMERGENCY",
                 AUTO_CMD_CLEAR_ERROR: "CLEAR",
@@ -273,7 +286,13 @@ class FakeWorker(QObject):
         status_flags = 0x0001 | 0x0002 | AUTO_FLAG_NO_XY_MOTION | 0x0040 | 0x0080 | 0x0200 | 0x0400
         if cmd != AUTO_CMD_RELEASE_RC:
             status_flags |= 0x0100
-        if cmd in (AUTO_CMD_REQUEST_MODE2, AUTO_CMD_DRYRUN_TAKEOFF_LAND, AUTO_CMD_START_LOW_TAKEOFF_LAND):
+        if cmd in (
+            AUTO_CMD_REQUEST_MODE2,
+            AUTO_CMD_DRYRUN_TAKEOFF_LAND,
+            AUTO_CMD_START_LOW_TAKEOFF_LAND,
+            AUTO_CMD_TAKEOFF_HOLD,
+            AUTO_CMD_LAND_ONLY,
+        ):
             status_flags |= 0x0020
         self._schedule_auto_status(seq, cmd, state, status_flags, error)
 
@@ -318,6 +337,51 @@ class FakeWorker(QObject):
         if clamped:
             text += " CLP"
         self._schedule_echo(COLOR_GREEN, text)
+
+    def _echo_f9(self, data: bytes) -> None:
+        """0xF9 GUI相对位移：离线只验证帧格式和回执/状态显示。"""
+        if len(data) != 15:
+            self._auto_err_cnt += 1
+            self._schedule_echo(COLOR_RED, "AUTO MOVE_ERR seq=0 err=0001")
+            self._schedule_auto_status(0, 0xF9, 0x16, 0x00, 0x0001)
+            return
+        ver, seq, cmd, key, x, y, z, axis_mode, _flags = struct.unpack(
+            "<BHBHhhhBH", data
+        )
+        self._auto_rx_cnt += 1
+        error = 0
+        color = COLOR_GREEN
+        if ver != 1:
+            error = 0x0002
+            color = COLOR_RED
+            text = f"AUTO MOVE_ERR seq={seq} err={error:04X}"
+            state = 0x16
+        elif cmd == AUTO_MOVE_CMD_START and key != AUTO_SAFETY_KEY:
+            error = 0x0003
+            color = COLOR_RED
+            text = f"AUTO MOVE_ERR seq={seq} err={error:04X}"
+            state = 0x16
+        elif cmd == AUTO_MOVE_CMD_START:
+            text = f"AUTO MOVE_START seq={seq}"
+            state = 23
+        elif cmd == AUTO_MOVE_CMD_STOP:
+            text = f"AUTO MOVE_STOP seq={seq}"
+            state = 19
+        elif cmd == AUTO_MOVE_CMD_QUERY:
+            text = f"AUTO MOVE_QUERY seq={seq}"
+            state = 0
+        else:
+            error = 0x0006
+            color = COLOR_RED
+            text = f"AUTO MOVE_BAD_CMD seq={seq} err={error:04X}"
+            state = 0x16
+        if error:
+            self._auto_err_cnt += 1
+        self._schedule_echo(color, text)
+        status_flags = 0x0001 | 0x0002 | 0x0004 | AUTO_FLAG_NO_XY_MOTION | 0x0040 | 0x0080 | 0x0100
+        if cmd == AUTO_MOVE_CMD_START:
+            status_flags |= 0x0020
+        self._schedule_auto_status(seq, 0xF9, state, status_flags, error)
 
     def _schedule_echo(self, color: int, text: str) -> None:
         timer = QTimer(self)

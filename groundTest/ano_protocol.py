@@ -26,6 +26,7 @@ INVALID_S32 = -2147483648
 # 0xF7/F8 自主任务命令/状态帧
 CMD_AUTO_MISSION = 0xF7
 CMD_AUTO_STATUS = 0xF8
+CMD_AUTO_MOVE = 0xF9
 AUTO_PROTOCOL_VER = 1
 AUTO_SAFETY_KEY = 0xA55A
 AUTO_FLAG_NO_XY_MOTION = 0x0008
@@ -33,6 +34,9 @@ AUTO_STATUS_FLAG_RC_LOCKOUT = 0x0100
 AUTO_STATUS_FLAG_RC_FAILSAFE = 0x0200
 AUTO_STATUS_FLAG_RC_NO_SIGNAL = 0x0400
 AUTO_STATUS_FLAG_RC_HOLD_FRAME = 0x0800
+AUTO_STATUS_FLAG_VOLT_TAKEOFF_OK = 0x1000
+AUTO_STATUS_FLAG_VOLT_WARN = 0x2000
+AUTO_STATUS_FLAG_VOLT_LOW = 0x4000
 
 AUTO_CMD_QUERY_STATUS = 0x00
 AUTO_CMD_PRECHECK = 0x01
@@ -44,6 +48,20 @@ AUTO_CMD_EMERGENCY_LOCK = 0x06
 AUTO_CMD_CLEAR_ERROR = 0x07
 AUTO_CMD_RELEASE_RC = 0x08
 AUTO_CMD_LOCK_RC = 0x09
+AUTO_CMD_TAKEOFF_HOLD = 0x0A
+AUTO_CMD_LAND_ONLY = 0x0B
+
+AUTO_MOVE_CMD_QUERY = 0x00
+AUTO_MOVE_CMD_START = 0x01
+AUTO_MOVE_CMD_STOP = 0x02
+
+AUTO_MOVE_AXIS_XYZ = 0
+AUTO_MOVE_AXIS_X = 1
+AUTO_MOVE_AXIS_Y = 2
+AUTO_MOVE_AXIS_Z = 3
+AUTO_MOVE_AXIS_XY = 4
+AUTO_MOVE_AXIS_AUTO = 0xFF
+AUTO_MOVE_LIMIT_CM = 200
 
 FLAG_SLAM_VALID = 0x01
 FLAG_TARGET_VALID = 0x02
@@ -199,6 +217,56 @@ def build_f7_auto_cmd(
     if len(data) != 0x10:
         raise AssertionError(f"internal F7 length error: {len(data)}")
     return build_frame(dest, CMD_AUTO_MISSION, data)
+
+
+def build_f9_move_cmd(
+    dest: int,
+    seq: int,
+    cmd: int,
+    *,
+    safety_key: int = 0,
+    x_cm: int | float = 0,
+    y_cm: int | float = 0,
+    z_cm: int | float = 0,
+    axis_mode: int = AUTO_MOVE_AXIS_AUTO,
+    flags: int = 0,
+    ver: int = AUTO_PROTOCOL_VER,
+) -> bytes:
+    """GUI → STM32 相对位移命令帧 0xF9。
+
+    DATA = ver:u8, seq:u16, cmd:u8, safety_key:u16, x/y/z:s16 cm,
+    axis_mode:u8, flags:u16，全小端。第一版飞控端每轴限制 ±200cm。
+    """
+    checks = {
+        "ver": (ver, 0, 0xFF),
+        "seq": (seq, 0, 0xFFFF),
+        "cmd": (cmd, 0, 0xFF),
+        "safety_key": (safety_key, 0, 0xFFFF),
+        "x_cm": (round(float(x_cm)), -32768, 32767),
+        "y_cm": (round(float(y_cm)), -32768, 32767),
+        "z_cm": (round(float(z_cm)), -32768, 32767),
+        "axis_mode": (axis_mode, 0, 0xFF),
+        "flags": (flags, 0, 0xFFFF),
+    }
+    for name, (value, lo, hi) in checks.items():
+        iv = int(value)
+        if not (lo <= iv <= hi):
+            raise ValueError(f"{name} out of range: {value}")
+    data = struct.pack(
+        "<BHBHhhhBH",
+        int(ver) & 0xFF,
+        int(seq) & 0xFFFF,
+        int(cmd) & 0xFF,
+        int(safety_key) & 0xFFFF,
+        int(round(float(x_cm))),
+        int(round(float(y_cm))),
+        int(round(float(z_cm))),
+        int(axis_mode) & 0xFF,
+        int(flags) & 0xFFFF,
+    )
+    if len(data) != 0x0F:
+        raise AssertionError(f"internal F9 length error: {len(data)}")
+    return build_frame(dest, CMD_AUTO_MOVE, data)
 
 
 

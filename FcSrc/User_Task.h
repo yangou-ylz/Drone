@@ -83,6 +83,14 @@
 
 void UserTask_OneKeyCmd(void);
 
+/* GUI自主位移命令复用 PID3D 位置环。只暴露启动/停止/50Hz Tick，
+ * 不改 PID3D 内部速度积分、PID参数和到位判定逻辑。 */
+u8 UserTask_Pid3dStartFromGui(u8 axis_mode);
+void UserTask_Pid3dTickFromGui(void);
+void UserTask_Pid3dStopFromGui(void);
+u8 UserTask_Pid3dGuiActive(void);
+u8 UserTask_Pid3dGuiStep(void);
+
 // =====================================================================
 // PID3D — 三轴联合位置控制配置
 // 三个独立PID(x/y/z)同时运行，各自参数，输出vx/vy/vz合成后一帧发送

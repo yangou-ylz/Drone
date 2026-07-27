@@ -9,7 +9,10 @@ from ano_protocol import (
     AUTO_CMD_LOCK_RC,
     AUTO_CMD_PRECHECK,
     AUTO_CMD_RELEASE_RC,
+    AUTO_CMD_TAKEOFF_HOLD,
     AUTO_FLAG_NO_XY_MOTION,
+    AUTO_MOVE_AXIS_AUTO,
+    AUTO_MOVE_CMD_START,
     AUTO_SAFETY_KEY,
     AUTO_STATUS_FLAG_RC_FAILSAFE,
     AUTO_STATUS_FLAG_RC_HOLD_FRAME,
@@ -17,6 +20,7 @@ from ano_protocol import (
     AUTO_STATUS_FLAG_RC_NO_SIGNAL,
     CMD_AUTO_STATUS,
     build_f7_auto_cmd,
+    build_f9_move_cmd,
     build_frame,
     calc_checksum,
     hex_dump,
@@ -28,6 +32,18 @@ GOLDEN_F7_PRECHECK = (
     "AA FF F7 10 "
     "01 01 00 01 00 00 28 00 B8 0B 08 00 30 75 00 00 "
     "4B BB"
+)
+
+GOLDEN_F7_TAKEOFF_HOLD = (
+    "AA FF F7 10 "
+    "01 0B 00 0A 5A A5 28 00 B8 0B 08 00 30 75 00 00 "
+    "5D 15"
+)
+
+GOLDEN_F9_MOVE_X30 = (
+    "AA FF F9 0F "
+    "01 01 00 01 5A A5 1E 00 00 00 00 00 FF 00 00 "
+    "D0 89"
 )
 
 
@@ -76,6 +92,42 @@ def test_f7_lock_rc_requires_safety_key() -> None:
     assert key == AUTO_SAFETY_KEY
 
 
+def test_f7_takeoff_hold_golden() -> None:
+    frame = build_f7_auto_cmd(
+        ADDR_BROADCAST,
+        seq=11,
+        cmd=AUTO_CMD_TAKEOFF_HOLD,
+        safety_key=AUTO_SAFETY_KEY,
+        height_cm=40,
+        hold_ms=3000,
+        flags=AUTO_FLAG_NO_XY_MOTION,
+        timeout_ms=30000,
+    )
+    assert len(frame) == 22
+    assert hex_dump(frame) == GOLDEN_F7_TAKEOFF_HOLD
+    assert frame[:4] == bytes([0xAA, 0xFF, 0xF7, 0x10])
+    sc, ac = calc_checksum(frame[:-2])
+    assert frame[-2:] == bytes([sc, ac])
+
+
+def test_f9_move_x30_golden() -> None:
+    frame = build_f9_move_cmd(
+        ADDR_BROADCAST,
+        seq=1,
+        cmd=AUTO_MOVE_CMD_START,
+        safety_key=AUTO_SAFETY_KEY,
+        x_cm=30,
+        y_cm=0,
+        z_cm=0,
+        axis_mode=AUTO_MOVE_AXIS_AUTO,
+    )
+    assert len(frame) == 21
+    assert hex_dump(frame) == GOLDEN_F9_MOVE_X30
+    assert frame[:4] == bytes([0xAA, 0xFF, 0xF9, 0x0F])
+    sc, ac = calc_checksum(frame[:-2])
+    assert frame[-2:] == bytes([sc, ac])
+
+
 def test_f8_status_parse() -> None:
     data = struct.pack(
         "<BHHBBHHBBHhHHHH",
@@ -119,6 +171,8 @@ def main() -> int:
     test_f7_precheck_golden()
     test_f7_release_rc_requires_safety_key()
     test_f7_lock_rc_requires_safety_key()
+    test_f7_takeoff_hold_golden()
+    test_f9_move_x30_golden()
     test_f8_status_parse()
     print("test_f7_f8_frame.py: OK")
     return 0

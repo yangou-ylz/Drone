@@ -4,10 +4,21 @@
 #include "LX_FC_Fun.h"
 #include "LX_FC_State.h"
 #include "Uplink_Cmd.h"
+#include "User_Task.h"
 
 #define AUTO_TICK_MS 20u
-#define AUTO_VOLT_MIN_100 900u
+/*
+ * 4S LiPo 电压保护分层：
+ * - 起飞前：空载/轻载电压低于15.2V时拒绝新任务，避免低余量起飞；
+ * - 飞行中：14.4V只告警，14.0V持续2s才自动降落，13.6V持续200ms认为危急。
+ */
+#define AUTO_VOLT_TAKEOFF_MIN_100 1520u
+#define AUTO_VOLT_WARN_100 1440u
+#define AUTO_VOLT_LAND_100 1400u
+#define AUTO_VOLT_CRITICAL_100 1360u
 #define AUTO_VOLT_MAX_100 2600u
+#define AUTO_VOLT_LAND_CONFIRM_TICKS 100u
+#define AUTO_VOLT_CRITICAL_CONFIRM_TICKS 10u
 #define AUTO_MODE2_STABLE_TICKS 100u
 #define AUTO_GROUND_STABLE_TICKS 100u
 #define AUTO_CMD_RETRY_TIMEOUT_TICKS 100u
@@ -19,7 +30,7 @@
 #define AUTO_TAKEOFF_CONFIRM_TICKS 10u
 #define AUTO_LAND_WAIT_TICKS 400u
 #define AUTO_IDLE_STATUS_GAP_TICKS 25u
-#define AUTO_ACTIVE_STATUS_GAP_TICKS 5u
+#define AUTO_ACTIVE_STATUS_GAP_TICKS 10u
 #define AUTO_F5_FRESH_MS 500u
 #define AUTO_F5_AGE_UNKNOWN 65535u
 
@@ -27,6 +38,7 @@
 #define AUTO_PLAN_MODE_ONLY 1u
 #define AUTO_PLAN_DRYRUN 2u
 #define AUTO_PLAN_REAL 3u
+#define AUTO_PLAN_TAKEOFF_HOLD 4u
 
 #define AUTO_RC_OWNER_AUTO 0u
 #define AUTO_RC_OWNER_RC 1u
@@ -53,6 +65,10 @@ static u8 s_rc_control_owner;
 static s32 s_takeoff_alt_ref_cm;
 static s32 s_takeoff_lift_max_cm;
 static u16 s_takeoff_confirm_tick;
+static u16 s_last_move_seq;
+static u16 s_volt_low_tick;
+static u16 s_volt_critical_tick;
+static u8 s_volt_warn_sent;
 
 static void app(char *buf, u8 *idx, const char *str)
 {
@@ -185,6 +201,7 @@ static u8 is_active_state(u8 st)
 static void clear_rt_output(void);
 static void mark_status_now(void);
 static void enter_state(u8 new_state, const char *name);
+static void enter_state_quiet(u8 new_state);
 
 static u8 auto_owns_rc_control(void)
 {
@@ -204,6 +221,7 @@ static void acquire_auto_control(const char *reason)
 
 static void release_rc_control(const char *reason)
 {
+	UserTask_Pid3dStopFromGui();
 	s_rc_control_owner = AUTO_RC_OWNER_RC;
 	clear_rt_output();
 	s_plan = AUTO_PLAN_NONE;
@@ -213,6 +231,7 @@ static void release_rc_control(const char *reason)
 
 static void lock_rc_control(const char *reason)
 {
+	UserTask_Pid3dStopFromGui();
 	s_rc_control_owner = AUTO_RC_OWNER_AUTO;
 	clear_rt_output();
 	s_plan = AUTO_PLAN_NONE;
@@ -248,12 +267,98 @@ static s32 takeoff_delta_cm(void)
 	return delta;
 }
 
-static u8 voltage_ok(void)
+static u8 voltage_sample_ok(void)
 {
-	return (fc_bat.st_data.voltage_100 >= AUTO_VOLT_MIN_100 &&
+	return (fc_bat.st_data.voltage_100 > 0u &&
 			fc_bat.st_data.voltage_100 <= AUTO_VOLT_MAX_100)
 			   ? 1u
 			   : 0u;
+}
+
+static u8 voltage_takeoff_ok(void)
+{
+	return (fc_bat.st_data.voltage_100 >= AUTO_VOLT_TAKEOFF_MIN_100 &&
+			voltage_sample_ok() != 0u)
+			   ? 1u
+			   : 0u;
+}
+
+static u8 voltage_flight_ok(void)
+{
+	return (fc_bat.st_data.voltage_100 >= AUTO_VOLT_LAND_100 &&
+			voltage_sample_ok() != 0u)
+			   ? 1u
+			   : 0u;
+}
+
+static u8 voltage_warn_now(void)
+{
+	return (fc_bat.st_data.voltage_100 < AUTO_VOLT_WARN_100 ||
+			voltage_sample_ok() == 0u)
+			   ? 1u
+			   : 0u;
+}
+
+static u8 voltage_low_now(void)
+{
+	return (fc_bat.st_data.voltage_100 < AUTO_VOLT_LAND_100 ||
+			voltage_sample_ok() == 0u)
+			   ? 1u
+			   : 0u;
+}
+
+static void voltage_runtime_reset(void)
+{
+	s_volt_low_tick = 0;
+	s_volt_critical_tick = 0;
+	s_volt_warn_sent = 0;
+}
+
+static u8 voltage_runtime_ok(void)
+{
+	u16 v = fc_bat.st_data.voltage_100;
+
+	if (v < AUTO_VOLT_LAND_100 || voltage_sample_ok() == 0u)
+	{
+		if (s_volt_low_tick < 0xFFFFu)
+		{
+			s_volt_low_tick++;
+		}
+	}
+	else
+	{
+		s_volt_low_tick = 0;
+	}
+
+	if (v < AUTO_VOLT_CRITICAL_100 || voltage_sample_ok() == 0u)
+	{
+		if (s_volt_critical_tick < 0xFFFFu)
+		{
+			s_volt_critical_tick++;
+		}
+	}
+	else
+	{
+		s_volt_critical_tick = 0;
+	}
+
+	if (v < AUTO_VOLT_WARN_100 && s_volt_warn_sent == 0u)
+	{
+		auto_log(UPLINK_LOG_WARN, "VOLT_WARN", s_last_cmd_seq, AUTO_ERR_OK);
+		s_volt_warn_sent = 1u;
+		mark_status_now();
+	}
+	else if (v >= AUTO_VOLT_WARN_100)
+	{
+		s_volt_warn_sent = 0u;
+	}
+
+	if (s_volt_critical_tick >= AUTO_VOLT_CRITICAL_CONFIRM_TICKS ||
+		s_volt_low_tick >= AUTO_VOLT_LAND_CONFIRM_TICKS)
+	{
+		return 0u;
+	}
+	return 1u;
 }
 
 static u8 module_state_ok(u8 sta)
@@ -275,9 +380,21 @@ static u8 ext_alt_ok(void)
 static void refresh_flags(void)
 {
 	u16 flags = 0;
-	if (voltage_ok() != 0u)
+	if (voltage_flight_ok() != 0u)
 	{
 		flags |= AUTO_STATUS_FLAG_VOLT_OK;
+	}
+	if (voltage_takeoff_ok() != 0u)
+	{
+		flags |= AUTO_STATUS_FLAG_VOLT_TAKEOFF_OK;
+	}
+	if (voltage_warn_now() != 0u)
+	{
+		flags |= AUTO_STATUS_FLAG_VOLT_WARN;
+	}
+	if (voltage_low_now() != 0u)
+	{
+		flags |= AUTO_STATUS_FLAG_VOLT_LOW;
 	}
 	if (fc_sta.fc_mode_sta == 2u)
 	{
@@ -332,6 +449,7 @@ static void set_error(u16 err, u8 to_error_state)
 {
 	s_error = err;
 	s_err_cnt++;
+	UserTask_Pid3dStopFromGui();
 	clear_rt_output();
 	if (to_error_state != 0u)
 	{
@@ -347,17 +465,31 @@ static void abort_land_with_error(u16 err, const char *name)
 {
 	s_error = err;
 	s_err_cnt++;
+	UserTask_Pid3dStopFromGui();
 	clear_rt_output();
 	auto_log(UPLINK_LOG_ERR, name, s_last_cmd_seq, err);
-	enter_state(AUTO_STATE_ABORT_LAND, name);
+	enter_state_quiet(AUTO_STATE_ABORT_LAND);
 }
 
-static void enter_state(u8 new_state, const char *name)
+static void enter_state_quiet(u8 new_state)
 {
 	s_state = new_state;
 	s_state_tick = 0;
 	s_mode2_stable_tick = 0;
+	if (new_state == AUTO_STATE_MODE2_REQUEST ||
+		new_state == AUTO_STATE_MOVE_RUN ||
+		new_state == AUTO_STATE_IDLE ||
+		new_state == AUTO_STATE_DONE ||
+		new_state == AUTO_STATE_ERROR)
+	{
+		voltage_runtime_reset();
+	}
 	mark_status_now();
+}
+
+static void enter_state(u8 new_state, const char *name)
+{
+	enter_state_quiet(new_state);
 	if (name != 0)
 	{
 		auto_log(UPLINK_LOG_INFO, name, s_last_cmd_seq, AUTO_ERR_OK);
@@ -369,6 +501,7 @@ static u8 require_key(u8 cmd)
 	if (cmd == AUTO_CMD_REQUEST_MODE2 ||
 		cmd == AUTO_CMD_DRYRUN_TAKEOFF_LAND ||
 		cmd == AUTO_CMD_START_LOW_TAKEOFF_LAND ||
+		cmd == AUTO_CMD_TAKEOFF_HOLD ||
 		cmd == AUTO_CMD_RELEASE_RC ||
 		cmd == AUTO_CMD_LOCK_RC)
 	{
@@ -395,12 +528,23 @@ static u8 validate_params(const _auto_mission_cmd_st *cmd)
 			return 0u;
 		}
 	}
+	else if (cmd->cmd == AUTO_CMD_TAKEOFF_HOLD)
+	{
+		if (cmd->height_cm < 30u || cmd->height_cm > 80u)
+		{
+			return 0u;
+		}
+		if (cmd->timeout_ms < 5000u || cmd->timeout_ms > 60000u)
+		{
+			return 0u;
+		}
+	}
 	return 1u;
 }
 
 static u8 precheck_base(u8 require_locked, u8 require_mode2)
 {
-	if (voltage_ok() == 0u)
+	if (voltage_takeoff_ok() == 0u)
 	{
 		set_error(AUTO_ERR_PRECHECK_VOLT, 0);
 		return 0u;
@@ -435,6 +579,105 @@ static u8 precheck_base(u8 require_locked, u8 require_mode2)
 	return 1u;
 }
 
+static u8 move_state_allows_start(void)
+{
+	/* 允许在F7起飞后的HOLD悬停窗口内由F9接管位移。
+	 * 推荐由F7 TAKEOFF_HOLD起飞，后续正常降落走F7 LAND_ONLY。 */
+	if (s_state == AUTO_STATE_HOLD &&
+		(s_plan == AUTO_PLAN_REAL || s_plan == AUTO_PLAN_TAKEOFF_HOLD))
+	{
+		return 1u;
+	}
+	if (s_plan != AUTO_PLAN_NONE)
+	{
+		return 0u;
+	}
+	if (s_state == AUTO_STATE_IDLE ||
+		s_state == AUTO_STATE_DONE ||
+		s_state == AUTO_STATE_MOVE_HOLD)
+	{
+		return 1u;
+	}
+	return 0u;
+}
+
+static u8 move_axis_from_xyz(s16 x_cm, s16 y_cm, s16 z_cm, u8 requested_axis)
+{
+	if (requested_axis <= AUTO_MOVE_AXIS_XY)
+	{
+		return requested_axis;
+	}
+	if (z_cm != 0)
+	{
+		if (x_cm == 0 && y_cm == 0)
+		{
+			return AUTO_MOVE_AXIS_Z;
+		}
+		return AUTO_MOVE_AXIS_XYZ;
+	}
+	if (x_cm != 0 && y_cm != 0)
+	{
+		return AUTO_MOVE_AXIS_XY;
+	}
+	if (x_cm != 0)
+	{
+		return AUTO_MOVE_AXIS_X;
+	}
+	if (y_cm != 0)
+	{
+		return AUTO_MOVE_AXIS_Y;
+	}
+	return AUTO_MOVE_AXIS_XY;
+}
+
+static u8 move_params_ok(const _auto_move_cmd_st *cmd)
+{
+	if (cmd->x_cm > AUTO_MOVE_LIMIT_CM || cmd->x_cm < -AUTO_MOVE_LIMIT_CM)
+	{
+		return 0u;
+	}
+	if (cmd->y_cm > AUTO_MOVE_LIMIT_CM || cmd->y_cm < -AUTO_MOVE_LIMIT_CM)
+	{
+		return 0u;
+	}
+	if (cmd->z_cm > AUTO_MOVE_LIMIT_CM || cmd->z_cm < -AUTO_MOVE_LIMIT_CM)
+	{
+		return 0u;
+	}
+	return 1u;
+}
+
+static u8 move_precheck(void)
+{
+	if (voltage_flight_ok() == 0u)
+	{
+		set_error(AUTO_ERR_PRECHECK_VOLT, 0);
+		return 0u;
+	}
+	if (fc_sta.fc_mode_sta != 2u)
+	{
+		set_error(AUTO_ERR_MOVE_DENY_MODE, 0);
+		return 0u;
+	}
+	if (fc_sta.unlock_sta == 0u)
+	{
+		set_error(AUTO_ERR_MOVE_DENY_UNLOCK, 0);
+		return 0u;
+	}
+	if (dt.wait_ck != 0u)
+	{
+		set_error(AUTO_ERR_PRECHECK_WAIT_CK, 0);
+		return 0u;
+	}
+	if (ext_vel_ok() == 0u || ext_alt_ok() == 0u)
+	{
+		set_error(AUTO_ERR_MOVE_DENY_SENSOR, 0);
+		return 0u;
+	}
+	s_error = AUTO_ERR_OK;
+	return 1u;
+}
+
 static void go_done(void)
 {
 	clear_rt_output();
@@ -450,6 +693,7 @@ static void go_mode2_request(u8 plan)
 
 static void go_emergency(void)
 {
+	UserTask_Pid3dStopFromGui();
 	clear_rt_output();
 	s_error = AUTO_ERR_EMERGENCY_LOCK;
 	s_err_cnt++;
@@ -474,6 +718,7 @@ void Auto_Mission_Init(void)
 	s_status_gap_tick = 0;
 	s_f5_age_ms = AUTO_F5_AGE_UNKNOWN;
 	s_last_f5_rx_cnt = 0;
+	s_last_move_seq = 0;
 	s_rx_f7_cnt = 0;
 	s_err_cnt = 0;
 	s_need_status_now = 1;
@@ -554,14 +799,33 @@ void Auto_Mission_OnCommand(const _auto_mission_cmd_st *cmd)
 	if (cmd->cmd == AUTO_CMD_ABORT_LAND)
 	{
 		acquire_auto_control("RC_LOCKOUT");
+		UserTask_Pid3dStopFromGui();
 		s_error = AUTO_ERR_USER_ABORT;
 		s_err_cnt++;
 		clear_rt_output();
 		enter_state(AUTO_STATE_ABORT_LAND, "ABORT_LAND");
 		return;
 	}
+	if (cmd->cmd == AUTO_CMD_LAND_ONLY)
+	{
+		acquire_auto_control("RC_LOCKOUT");
+		UserTask_Pid3dStopFromGui();
+		clear_rt_output();
+		s_error = AUTO_ERR_OK;
+		s_plan = AUTO_PLAN_NONE;
+		if (fc_sta.unlock_sta == 0u)
+		{
+			enter_state(AUTO_STATE_DONE, "LAND_DONE");
+		}
+		else
+		{
+			enter_state(AUTO_STATE_LAND_REQUEST, "LAND_ONLY");
+		}
+		return;
+	}
 	if (cmd->cmd == AUTO_CMD_CLEAR_ERROR)
 	{
+		UserTask_Pid3dStopFromGui();
 		clear_rt_output();
 		s_error = AUTO_ERR_OK;
 		s_plan = AUTO_PLAN_NONE;
@@ -643,9 +907,126 @@ void Auto_Mission_OnCommand(const _auto_mission_cmd_st *cmd)
 		}
 		return;
 	}
+	if (cmd->cmd == AUTO_CMD_TAKEOFF_HOLD)
+	{
+		acquire_auto_control("RC_LOCKOUT");
+		if (precheck_base(1u, 0u) != 0u)
+		{
+			go_mode2_request(AUTO_PLAN_TAKEOFF_HOLD);
+		}
+		else
+		{
+			auto_log(UPLINK_LOG_ERR, "TAKEOFF_HOLD_DENY", cmd->seq, s_error);
+		}
+		return;
+	}
 
 	set_error(AUTO_ERR_BAD_CMD, 0);
 	auto_log(UPLINK_LOG_ERR, "BAD_CMD", cmd->seq, AUTO_ERR_BAD_CMD);
+}
+
+void Auto_Mission_OnMoveCommand(const _auto_move_cmd_st *cmd)
+{
+	u8 axis_mode;
+	u8 clamped;
+
+	if (cmd == 0)
+	{
+		return;
+	}
+
+	s_last_cmd = AUTO_F9_CMD;
+
+	if (cmd->ver != AUTO_PROTOCOL_VER)
+	{
+		set_error(AUTO_ERR_BAD_VER, 0);
+		auto_log(UPLINK_LOG_ERR, "MOVE_ERR", cmd->seq, AUTO_ERR_BAD_VER);
+		return;
+	}
+
+	if (cmd->cmd != AUTO_MOVE_CMD_QUERY &&
+		cmd->cmd != AUTO_MOVE_CMD_STOP &&
+		cmd->seq == s_last_move_seq)
+	{
+		set_error(AUTO_ERR_DUP_SEQ, 0);
+		auto_log(UPLINK_LOG_WARN, "MOVE_DUP", cmd->seq, AUTO_ERR_DUP_SEQ);
+		return;
+	}
+
+	s_last_move_seq = cmd->seq;
+	s_last_cmd_seq = cmd->seq;
+
+	if (cmd->cmd == AUTO_MOVE_CMD_QUERY)
+	{
+		auto_log(UPLINK_LOG_INFO, "MOVE_QUERY", cmd->seq, AUTO_ERR_OK);
+		mark_status_now();
+		return;
+	}
+
+	if (cmd->cmd == AUTO_MOVE_CMD_STOP)
+	{
+		UserTask_Pid3dStopFromGui();
+		clear_rt_output();
+		s_plan = AUTO_PLAN_NONE;
+		s_error = AUTO_ERR_OK;
+		enter_state(AUTO_STATE_DONE, "MOVE_STOP");
+		return;
+	}
+
+	if (cmd->cmd != AUTO_MOVE_CMD_START)
+	{
+		set_error(AUTO_ERR_BAD_CMD, 0);
+		auto_log(UPLINK_LOG_ERR, "MOVE_BAD_CMD", cmd->seq, AUTO_ERR_BAD_CMD);
+		return;
+	}
+
+	if (cmd->safety_key != AUTO_SAFETY_KEY)
+	{
+		set_error(AUTO_ERR_BAD_KEY, 0);
+		auto_log(UPLINK_LOG_ERR, "MOVE_ERR", cmd->seq, AUTO_ERR_BAD_KEY);
+		return;
+	}
+
+	if (move_params_ok(cmd) == 0u)
+	{
+		set_error(AUTO_ERR_BAD_PARAM, 0);
+		auto_log(UPLINK_LOG_ERR, "MOVE_BAD_PARAM", cmd->seq, AUTO_ERR_BAD_PARAM);
+		return;
+	}
+
+	if (move_state_allows_start() == 0u)
+	{
+		set_error(AUTO_ERR_MOVE_DENY_STATE, 0);
+		auto_log(UPLINK_LOG_ERR, "MOVE_DENY_STATE", cmd->seq, AUTO_ERR_MOVE_DENY_STATE);
+		return;
+	}
+
+	if (UserTask_Pid3dGuiActive() != 0u && UserTask_Pid3dGuiStep() == 3u)
+	{
+		set_error(AUTO_ERR_MOVE_BUSY, 0);
+		auto_log(UPLINK_LOG_WARN, "MOVE_BUSY", cmd->seq, AUTO_ERR_MOVE_BUSY);
+		return;
+	}
+
+	if (move_precheck() == 0u)
+	{
+		auto_log(UPLINK_LOG_ERR, "MOVE_DENY", cmd->seq, s_error);
+		return;
+	}
+
+	acquire_auto_control("RC_LOCKOUT");
+	clamped = Uplink_SetGoalXYZ_Cm((float)cmd->x_cm, (float)cmd->y_cm, (float)cmd->z_cm);
+	axis_mode = move_axis_from_xyz(cmd->x_cm, cmd->y_cm, cmd->z_cm, cmd->axis_mode);
+	if (UserTask_Pid3dStartFromGui(axis_mode) == 0u)
+	{
+		set_error(AUTO_ERR_MOVE_BUSY, 0);
+		auto_log(UPLINK_LOG_WARN, "MOVE_BUSY", cmd->seq, AUTO_ERR_MOVE_BUSY);
+		return;
+	}
+
+	s_error = AUTO_ERR_OK;
+	s_plan = AUTO_PLAN_NONE;
+	enter_state(AUTO_STATE_MOVE_RUN, (clamped != 0u) ? "MOVE_START_CLP" : "MOVE_START");
 }
 
 static void tick_mode2_request(void)
@@ -682,6 +1063,10 @@ static void tick_mode2_wait(void)
 			else if (s_plan == AUTO_PLAN_REAL)
 			{
 				enter_state(AUTO_STATE_UNLOCK_REQUEST, "UNLOCK_REQ");
+			}
+			else if (s_plan == AUTO_PLAN_TAKEOFF_HOLD)
+			{
+				enter_state(AUTO_STATE_UNLOCK_REQUEST, "TAKEOFF_HOLD");
 			}
 			else
 			{
@@ -767,7 +1152,7 @@ static void tick_real_mission(void)
 								  s_takeoff_alt_ref_cm,
 								  fc_alt.st_data.alt_fu_cm,
 								  0);
-			enter_state(AUTO_STATE_TAKEOFF_REQUEST, "TAKEOFF_REQ");
+			enter_state_quiet(AUTO_STATE_TAKEOFF_REQUEST);
 		}
 		break;
 	case AUTO_STATE_TAKEOFF_REQUEST:
@@ -802,7 +1187,7 @@ static void tick_real_mission(void)
 								  s_takeoff_alt_ref_cm,
 								  fc_alt.st_data.alt_fu_cm,
 								  delta_cm);
-			enter_state(AUTO_STATE_HOLD, "HOLD");
+			enter_state_quiet(AUTO_STATE_HOLD);
 		}
 		else if (clamp_ms_from_ticks(s_state_tick) > s_timeout_ms)
 		{
@@ -823,7 +1208,7 @@ static void tick_real_mission(void)
 		break;
 	}
 	case AUTO_STATE_HOLD:
-		if (clamp_ms_from_ticks(s_state_tick) >= s_hold_ms)
+		if (s_plan == AUTO_PLAN_REAL && clamp_ms_from_ticks(s_state_tick) >= s_hold_ms)
 		{
 			enter_state(AUTO_STATE_LAND_REQUEST, "LAND_REQ");
 		}
@@ -892,6 +1277,53 @@ static void tick_abort_or_emergency(void)
 	}
 }
 
+static void move_runtime_fault(u16 err, const char *name)
+{
+	UserTask_Pid3dStopFromGui();
+	clear_rt_output();
+	set_error(err, 1u);
+	auto_log(UPLINK_LOG_ERR, name, s_last_cmd_seq, err);
+}
+
+static void tick_move_control(void)
+{
+	if (s_state != AUTO_STATE_MOVE_RUN && s_state != AUTO_STATE_MOVE_HOLD)
+	{
+		return;
+	}
+	if (voltage_runtime_ok() == 0u)
+	{
+		move_runtime_fault(AUTO_ERR_RUNTIME_VOLT, "MOVE_VOLT");
+		return;
+	}
+	if (fc_sta.fc_mode_sta != 2u)
+	{
+		move_runtime_fault(AUTO_ERR_RUNTIME_MODE, "MOVE_MODE");
+		return;
+	}
+	if (fc_sta.unlock_sta == 0u)
+	{
+		move_runtime_fault(AUTO_ERR_MOVE_DENY_UNLOCK, "MOVE_LOCKED");
+		return;
+	}
+	if (ext_vel_ok() == 0u || ext_alt_ok() == 0u)
+	{
+		move_runtime_fault(AUTO_ERR_RUNTIME_EXT, "MOVE_EXT");
+		return;
+	}
+
+	UserTask_Pid3dTickFromGui();
+	if (UserTask_Pid3dGuiActive() == 0u)
+	{
+		move_runtime_fault(AUTO_ERR_MOVE_TIMEOUT, "MOVE_TIMEOUT");
+		return;
+	}
+	if (UserTask_Pid3dGuiStep() == 4u && s_state != AUTO_STATE_MOVE_HOLD)
+	{
+		enter_state(AUTO_STATE_MOVE_HOLD, "MOVE_HOLD");
+	}
+}
+
 static u8 runtime_guard_state(void)
 {
 	switch (s_state)
@@ -926,11 +1358,12 @@ static void runtime_fault(u16 err, const char *name)
 
 static void runtime_safety_guard(void)
 {
-	if (s_plan != AUTO_PLAN_REAL || runtime_guard_state() == 0u)
+	if ((s_plan != AUTO_PLAN_REAL && s_plan != AUTO_PLAN_TAKEOFF_HOLD) ||
+		runtime_guard_state() == 0u)
 	{
 		return;
 	}
-	if (voltage_ok() == 0u)
+	if (voltage_runtime_ok() == 0u)
 	{
 		runtime_fault(AUTO_ERR_RUNTIME_VOLT, "RUNTIME_VOLT");
 		return;
@@ -1008,6 +1441,10 @@ void Auto_Mission_Tick_50Hz(void)
 	case AUTO_STATE_ABORT_LAND:
 	case AUTO_STATE_EMERGENCY_LOCK:
 		tick_abort_or_emergency();
+		break;
+	case AUTO_STATE_MOVE_RUN:
+	case AUTO_STATE_MOVE_HOLD:
+		tick_move_control();
 		break;
 	default:
 		break;

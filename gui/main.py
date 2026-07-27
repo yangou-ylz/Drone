@@ -976,12 +976,13 @@ class MainWindow(QMainWindow):
     @Slot(object)
     def _on_auto_mission_status(self, sample) -> None:
         """0xF8 自主任务状态变化日志。周期帧不刷屏，只在关键字段变化时输出。"""
-        try:
-            panel = self._command_panel._panels.get(0xF7)
-            if panel is not None and hasattr(panel, "on_auto_mission_status"):
+        for cid, panel in list(self._command_panel._panels.items()):
+            if not hasattr(panel, "on_auto_mission_status"):
+                continue
+            try:
                 panel.on_auto_mission_status(sample)
-        except Exception as exc:
-            self._log.warn("自主", f"F7 面板状态刷新失败：{exc}")
+            except Exception as exc:
+                self._log.warn("自主", f"0x{cid:02X} 面板状态刷新失败：{exc}")
 
         key = (sample.state, sample.error, sample.last_cmd_seq, sample.rx_f7_cnt, sample.err_cnt)
         if key == self._last_auto_status_key:

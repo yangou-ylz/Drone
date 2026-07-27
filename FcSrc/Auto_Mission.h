@@ -17,10 +17,15 @@
 #define AUTO_F8_CMD 0xF8
 #define AUTO_F8_DATA_LEN 0x19
 
+#define AUTO_F9_CMD 0xF9
+#define AUTO_F9_DATA_LEN 0x0F
+#define AUTO_F9_TOTAL_LEN 21
+
 #define AUTO_PROTOCOL_VER 1
 #define AUTO_SAFETY_KEY 0xA55A
 
 #define AUTO_FLAG_NO_XY_MOTION 0x0008
+#define AUTO_MOVE_LIMIT_CM 200
 
 /* 0xF7 cmd */
 #define AUTO_CMD_QUERY_STATUS 0x00
@@ -33,6 +38,20 @@
 #define AUTO_CMD_CLEAR_ERROR 0x07
 #define AUTO_CMD_RELEASE_RC 0x08
 #define AUTO_CMD_LOCK_RC 0x09
+#define AUTO_CMD_TAKEOFF_HOLD 0x0A
+#define AUTO_CMD_LAND_ONLY 0x0B
+
+/* 0xF9 cmd：GUI相对位移控制。第一版只启动/停止现有PID3D，不管理起降。 */
+#define AUTO_MOVE_CMD_QUERY 0x00
+#define AUTO_MOVE_CMD_START 0x01
+#define AUTO_MOVE_CMD_STOP 0x02
+
+/* 0xF9 axis_mode：与 User_Task.c::pid_3d_task 保持一致。 */
+#define AUTO_MOVE_AXIS_XYZ 0
+#define AUTO_MOVE_AXIS_X 1
+#define AUTO_MOVE_AXIS_Y 2
+#define AUTO_MOVE_AXIS_Z 3
+#define AUTO_MOVE_AXIS_XY 4
 
 /* F8 state */
 #define AUTO_STATE_IDLE 0
@@ -58,6 +77,8 @@
 #define AUTO_STATE_ABORT_LAND 20
 #define AUTO_STATE_EMERGENCY_LOCK 21
 #define AUTO_STATE_ERROR 22
+#define AUTO_STATE_MOVE_RUN 23
+#define AUTO_STATE_MOVE_HOLD 24
 
 /* F8 error */
 #define AUTO_ERR_OK 0x0000
@@ -83,6 +104,12 @@
 #define AUTO_ERR_RUNTIME_VOLT 0x0070
 #define AUTO_ERR_RUNTIME_MODE 0x0071
 #define AUTO_ERR_RUNTIME_EXT 0x0072
+#define AUTO_ERR_MOVE_BUSY 0x0080
+#define AUTO_ERR_MOVE_DENY_STATE 0x0081
+#define AUTO_ERR_MOVE_DENY_MODE 0x0082
+#define AUTO_ERR_MOVE_DENY_UNLOCK 0x0083
+#define AUTO_ERR_MOVE_DENY_SENSOR 0x0084
+#define AUTO_ERR_MOVE_TIMEOUT 0x0085
 
 /* F8 flags */
 #define AUTO_STATUS_FLAG_VOLT_OK 0x0001
@@ -97,6 +124,9 @@
 #define AUTO_STATUS_FLAG_RC_FAILSAFE 0x0200
 #define AUTO_STATUS_FLAG_RC_NO_SIGNAL 0x0400
 #define AUTO_STATUS_FLAG_RC_HOLD_FRAME 0x0800
+#define AUTO_STATUS_FLAG_VOLT_TAKEOFF_OK 0x1000
+#define AUTO_STATUS_FLAG_VOLT_WARN 0x2000
+#define AUTO_STATUS_FLAG_VOLT_LOW 0x4000
 
 typedef struct
 {
@@ -110,6 +140,19 @@ typedef struct
 	u16 timeout_ms;
 	u16 reserved;
 } _auto_mission_cmd_st;
+
+typedef struct
+{
+	u8 ver;
+	u16 seq;
+	u8 cmd;
+	u16 safety_key;
+	s16 x_cm;
+	s16 y_cm;
+	s16 z_cm;
+	u8 axis_mode;
+	u16 flags;
+} _auto_move_cmd_st;
 
 typedef struct
 {
@@ -133,6 +176,7 @@ typedef struct
 void Auto_Mission_Init(void);
 void Auto_Mission_Tick_50Hz(void);
 void Auto_Mission_OnCommand(const _auto_mission_cmd_st *cmd);
+void Auto_Mission_OnMoveCommand(const _auto_move_cmd_st *cmd);
 void Auto_Mission_RecordProtocolError(u16 error, u8 cmd);
 void Auto_Mission_GetStatus(_auto_mission_status_st *out);
 u8 Auto_Mission_RcControlAllowed(void);

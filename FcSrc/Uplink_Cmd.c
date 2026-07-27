@@ -208,6 +208,11 @@ static s32 le_s32_read(const u8 *p)
     return (s32)u;
 }
 
+static s16 le_s16_read(const u8 *p)
+{
+    return (s16)((u16)p[0] | ((u16)p[1] << 8));
+}
+
 static u16 le_u16_read(const u8 *p)
 {
     return (u16)((u16)p[0] | ((u16)p[1] << 8));
@@ -417,10 +422,34 @@ void Uplink_Cmd_Init(void)
 float Uplink_GetGoalX_Cm(void) { return s_goal_x_cm; }
 float Uplink_GetGoalY_Cm(void) { return s_goal_y_cm; }
 float Uplink_GetGoalZ_Cm(void) { return s_goal_z_cm; }
+u8 Uplink_SetGoalXYZ_Cm(float x_cm, float y_cm, float z_cm)
+{
+    float ax, ay, az;
+    u8 cx, cy, cz;
+
+    ax = 0.0f;
+    ay = 0.0f;
+    az = 0.0f;
+    cx = 0u;
+    cy = 0u;
+    cz = 0u;
+
+    (void)param_apply(PARAM_ID_GOAL_X, x_cm, &ax, &cx);
+    (void)param_apply(PARAM_ID_GOAL_Y, y_cm, &ay, &cy);
+    (void)param_apply(PARAM_ID_GOAL_Z, z_cm, &az, &cz);
+    return (u8)(cx | cy | cz);
+}
 #else
 float Uplink_GetGoalX_Cm(void) { return (float)PID3D_GOAL_X_CM; }
 float Uplink_GetGoalY_Cm(void) { return (float)PID3D_GOAL_Y_CM; }
 float Uplink_GetGoalZ_Cm(void) { return (float)PID3D_GOAL_Z_CM; }
+u8 Uplink_SetGoalXYZ_Cm(float x_cm, float y_cm, float z_cm)
+{
+    (void)x_cm;
+    (void)y_cm;
+    (void)z_cm;
+    return 0;
+}
 #endif
 
 u8 Uplink_F5_GetSnapshot(_uplink_f5_snapshot_st *out)
@@ -617,6 +646,30 @@ void Uplink_Cmd_Dispatch(u8 *data, u8 len)
         return;
     }
 
+    /* ---------- 阶段7a：0xF9 GUI相对位移命令 ---------- */
+    if (cmd == AUTO_F9_CMD)
+    {
+        _auto_move_cmd_st move_cmd;
+
+        if (data_len != AUTO_F9_DATA_LEN || len != AUTO_F9_TOTAL_LEN)
+        {
+            Auto_Mission_RecordProtocolError(AUTO_ERR_BAD_LEN, cmd);
+            return;
+        }
+
+        move_cmd.ver = *(data + 4);
+        move_cmd.seq = le_u16_read(data + 5);
+        move_cmd.cmd = *(data + 7);
+        move_cmd.safety_key = le_u16_read(data + 8);
+        move_cmd.x_cm = le_s16_read(data + 10);
+        move_cmd.y_cm = le_s16_read(data + 12);
+        move_cmd.z_cm = le_s16_read(data + 14);
+        move_cmd.axis_mode = *(data + 16);
+        move_cmd.flags = le_u16_read(data + 17);
+        Auto_Mission_OnMoveCommand(&move_cmd);
+        return;
+    }
+
     /* ---------- 阶段1：0xF1 灵活帧 ---------- */
     if (cmd == 0xF1)
     {
@@ -684,6 +737,11 @@ void Uplink_Cmd_Dispatch(u8 *data, u8 len)
         {
             return;
         }
+        if (UserTask_Pid3dGuiActive() != 0u)
+        {
+            Uplink_Log(UPLINK_LOG_WARN, "PARAM BUSY");
+            return;
+        }
         id = *(data + 4);
         cvt.bytes[0] = *(data + 5);
         cvt.bytes[1] = *(data + 6);
@@ -725,6 +783,11 @@ void Uplink_Cmd_Dispatch(u8 *data, u8 len)
         /* DATA 必须 3*4 = 12 字节 */
         if (data_len < 12)
         {
+            return;
+        }
+        if (UserTask_Pid3dGuiActive() != 0u)
+        {
+            Uplink_Log(UPLINK_LOG_WARN, "PARAM BUSY");
             return;
         }
         cx.bytes[0] = *(data + 4);
@@ -963,6 +1026,13 @@ void Uplink_Cmd_Record_F5_Checksum_Error(void) {}
 float Uplink_GetGoalX_Cm(void) { return (float)PID3D_GOAL_X_CM; }
 float Uplink_GetGoalY_Cm(void) { return (float)PID3D_GOAL_Y_CM; }
 float Uplink_GetGoalZ_Cm(void) { return (float)PID3D_GOAL_Z_CM; }
+u8 Uplink_SetGoalXYZ_Cm(float x_cm, float y_cm, float z_cm)
+{
+    (void)x_cm;
+    (void)y_cm;
+    (void)z_cm;
+    return 0;
+}
 u8 Uplink_F5_GetSnapshot(_uplink_f5_snapshot_st *out)
 {
     (void)out;
