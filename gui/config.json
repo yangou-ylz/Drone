@@ -279,5 +279,9 @@
   "path_viz.hud.settings": {},
   "features.numeric_panel": false,
   "features.flight_data": false,
-  "features.frame_monitor": false
+  "features.frame_monitor": false,
+  "splitter_sizes": [
+    408,
+    220
+  ]
 }

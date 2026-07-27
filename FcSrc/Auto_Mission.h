@@ -21,11 +21,17 @@
 #define AUTO_F9_DATA_LEN 0x0F
 #define AUTO_F9_TOTAL_LEN 21
 
+#define AUTO_FA_CMD 0xFA
+#define AUTO_FA_DATA_LEN 0x0E
+#define AUTO_FA_TOTAL_LEN 20
+
 #define AUTO_PROTOCOL_VER 1
 #define AUTO_SAFETY_KEY 0xA55A
 
 #define AUTO_FLAG_NO_XY_MOTION 0x0008
 #define AUTO_MOVE_LIMIT_CM 200
+#define AUTO_VEL_LIMIT_CMPS 30
+#define AUTO_YAW_LIMIT_DPS 45
 
 /* 0xF7 cmd */
 #define AUTO_CMD_QUERY_STATUS 0x00
@@ -45,6 +51,11 @@
 #define AUTO_MOVE_CMD_QUERY 0x00
 #define AUTO_MOVE_CMD_START 0x01
 #define AUTO_MOVE_CMD_STOP 0x02
+
+/* 0xFA cmd：GUI键盘低速速度控制。 */
+#define AUTO_VEL_CMD_QUERY 0x00
+#define AUTO_VEL_CMD_SET 0x01
+#define AUTO_VEL_CMD_STOP 0x02
 
 /* 0xF9 axis_mode：与 User_Task.c::pid_3d_task 保持一致。 */
 #define AUTO_MOVE_AXIS_XYZ 0
@@ -79,6 +90,7 @@
 #define AUTO_STATE_ERROR 22
 #define AUTO_STATE_MOVE_RUN 23
 #define AUTO_STATE_MOVE_HOLD 24
+#define AUTO_STATE_MANUAL_VEL 25
 
 /* F8 error */
 #define AUTO_ERR_OK 0x0000
@@ -110,6 +122,9 @@
 #define AUTO_ERR_MOVE_DENY_UNLOCK 0x0083
 #define AUTO_ERR_MOVE_DENY_SENSOR 0x0084
 #define AUTO_ERR_MOVE_TIMEOUT 0x0085
+#define AUTO_ERR_VEL_DENY_RC 0x0090
+#define AUTO_ERR_VEL_DENY_STATE 0x0091
+#define AUTO_ERR_VEL_TIMEOUT 0x0092
 
 /* F8 flags */
 #define AUTO_STATUS_FLAG_VOLT_OK 0x0001
@@ -157,6 +172,18 @@ typedef struct
 typedef struct
 {
 	u8 ver;
+	u16 seq;
+	u8 cmd;
+	u16 safety_key;
+	s16 vx_cmps;
+	s16 vy_cmps;
+	s16 yaw_dps;
+	u16 flags;
+} _auto_vel_cmd_st;
+
+typedef struct
+{
+	u8 ver;
 	u16 status_seq;
 	u16 last_cmd_seq;
 	u8 state;
@@ -177,6 +204,7 @@ void Auto_Mission_Init(void);
 void Auto_Mission_Tick_50Hz(void);
 void Auto_Mission_OnCommand(const _auto_mission_cmd_st *cmd);
 void Auto_Mission_OnMoveCommand(const _auto_move_cmd_st *cmd);
+void Auto_Mission_OnVelocityCommand(const _auto_vel_cmd_st *cmd);
 void Auto_Mission_RecordProtocolError(u16 error, u8 cmd);
 void Auto_Mission_GetStatus(_auto_mission_status_st *out);
 u8 Auto_Mission_RcControlAllowed(void);
