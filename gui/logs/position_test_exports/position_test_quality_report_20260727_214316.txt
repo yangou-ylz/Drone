@@ -1,0 +1,27 @@
+位置测试 / 雷达SLAM质量报告
+开始时间: 2026-07-27T21:37:39
+记录时长: 336.4s
+F6样本: 8140, 有效: 3241, 有效率: 39.8%
+频率: F5输入 29.0Hz / F6镜像 24.2Hz
+错误计数增量: LEN +0 / CK +0
+XY抖动σ: 50.12cm
+Z抖动σ: 0.00cm
+XY漂移: 5.39cm
+跳变(>20cm): 1
+F8样本: 1033, 命令事件: 18
+
+F9段误差:
+- seq=24488 cmd=(120,0,0) start=(0, 7) expected=(120, 7) actual=(123, 6) err=3.2cm
+- seq=24489 cmd=(0,120,0) start=(124, 6) expected=(124, 126) actual=(123, 89) err=37.0cm
+- seq=24490 cmd=(-120,0,0) start=(123, 90) expected=(3, 90) actual=(6, 90) err=3.0cm
+- seq=24491 cmd=(0,-120,0) start=(4, 90) expected=(4, -30) actual=(2, 9) err=39.1cm
+- seq=24492 cmd=(30,0,0) start=-- expected=-- actual=(29, 8) err=--
+- seq=24493 cmd=(0,30,0) start=(31, 7) expected=(31, 37) actual=(31, 29) err=8.0cm
+- seq=24494 cmd=(-30,0,0) start=(31, 30) expected=(1, 30) actual=(1, 29) err=1.0cm
+- seq=24495 cmd=(0,-30,0) start=(0, 29) expected=(0, -1) actual=(0, 8) err=9.0cm
+闭环/到位平均误差: 14.3cm
+
+判读纪律:
+- 当前只读观测，不接位置环，不写rt_tar，不触发0x41。
+- 若静止有效率低、跳变多、漂移大，先在树莓派侧修SLAM/坐标转换。
+- F9期望段只用于对比雷达观测，不代表飞控已使用树莓派位置控制。

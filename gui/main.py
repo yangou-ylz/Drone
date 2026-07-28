@@ -509,6 +509,11 @@ class MainWindow(QMainWindow):
         self._act_rviz.toggled.connect(self._on_rviz_toggled)
         bar.addAction(self._act_rviz)
 
+        self._act_radar_workflow = QAction("雷达联调", self)
+        self._act_radar_workflow.setToolTip("打开位置测试里的雷达联调页：记录、起飞、正方形巡航、降落、导出")
+        self._act_radar_workflow.triggered.connect(self._open_radar_workflow)
+        bar.addAction(self._act_radar_workflow)
+
         # ----- 帮助 -----
         m_help = bar.addMenu("帮助(&H)")
         act_about = QAction("关于", self)
@@ -562,7 +567,10 @@ class MainWindow(QMainWindow):
                 self._act_imu_test.setChecked(False)
                 self._act_imu_test.blockSignals(False)
             if self._position_test_window is None:
-                self._position_test_window = PositionTestWindow(self)
+                self._position_test_window = PositionTestWindow(
+                    self,
+                    send_command_fn=self._on_command_send_requested,
+                )
                 self._worker.frame_received.connect(self._position_test_window.on_frame)
                 self._central_stack.addWidget(self._position_test_window)
             self._position_test_window.set_link_connected(self._connection_bar.is_connected)
@@ -575,6 +583,18 @@ class MainWindow(QMainWindow):
             if self._central_stack.currentWidget() is self._position_test_window:
                 self._central_stack.setCurrentIndex(0)
             self._log.info("功能", "位置测试 已关闭")
+
+    def _open_radar_workflow(self) -> None:
+        """顶层快捷入口：直接打开位置测试的雷达联调页。"""
+        if not self._act_position_test.isChecked():
+            self._act_position_test.setChecked(True)
+        elif self._position_test_window is not None:
+            self._position_test_window.set_link_connected(self._connection_bar.is_connected)
+            self._position_test_window.set_active(True)
+            self._central_stack.setCurrentWidget(self._position_test_window)
+        if self._position_test_window is not None:
+            self._position_test_window.show_workflow()
+        self._log.info("功能", "雷达联调 已打开")
 
     def _send_raw_frame(self, frame: bytes) -> bool:
         """发送整帧原始字节（供 IMU 测试台设备校准使用）。
@@ -1040,6 +1060,11 @@ class MainWindow(QMainWindow):
             self._worker, "send_bytes", Qt.ConnectionType.QueuedConnection,
             Q_ARG(QByteArray, QByteArray(frame)),
         )
+        if self._position_test_window is not None:
+            try:
+                self._position_test_window.on_command_sent(cmd_id, params, desc, silent=silent)
+            except Exception as exc:
+                self._log.warn("位置测试", f"会话命令事件记录失败：{exc}")
         if not silent:
             self._log.info("发送", f"#{token} {cmd.name}  {desc}  ({len(frame)}B)")
 
